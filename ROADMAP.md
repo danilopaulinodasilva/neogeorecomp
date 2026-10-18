@@ -7,9 +7,8 @@
 
 ## Later
 
-- AES mode and AES system ROMs; the Unibios.
+- AES mode beyond what KOF98 needed (`ng_game_t.aes`): AES-specific I/O, the Unibios.
 - Memory card.
-- Multi-bank P ROMs (games over 2 MB): the dispatch table currently assumes bank 0 at `$200000`.
 - Protected and encrypted sets (CMC, PVC, SMA): they need decryption before the recompiler sees the code.
 - PAL timing and `TIMERSTOP`.
 - Flag liveness in the emitter, to drop dead flag computations (speed; correctness doesn't need it).

@@ -28,10 +28,13 @@ uint8_t  ng_irq_pending;
 
 uint64_t exec_native_blocks, exec_interp_instrs;
 
-/* Entry tables for the three regions code runs from, indexed by addr/2. */
+/* Entry tables for the regions code runs from, indexed by addr/2. The
+ * $200000 window has one table per P ROM bank; the mapped bank picks it. */
+#define MAX_BANKS 8
 static ng_func_t *s_tab_fixed;     /* $000000-$0FFFFF */
-static ng_func_t *s_tab_bank;      /* $200000-$2FFFFF */
+static ng_func_t *s_tab_bank[MAX_BANKS];   /* $200000-$2FFFFF */
 static ng_func_t *s_tab_bios;      /* $C00000-$C1FFFF */
+static int s_nbanks;
 static int s_interp_only;
 static int s_in_musashi;
 
@@ -62,13 +65,19 @@ static uint32_t s_miss[MISS_MAX];
 static size_t s_nmiss;
 static uint8_t *s_miss_seen;       /* bitmap over the same regions */
 
-static ng_func_t *slot(uint32_t a) {
+/* The table slot for `a` in `bank` (used only for $200000-$2FFFFF). */
+static ng_func_t *slot_in(uint32_t a, int bank) {
     a &= 0xFFFFFE;
     if (a < 0x100000) return &s_tab_fixed[a >> 1];
-    if (a >= 0x200000 && a < 0x300000) return &s_tab_bank[(a - 0x200000) >> 1];
+    if (a >= 0x200000 && a < 0x300000)
+        return bank < s_nbanks ? &s_tab_bank[bank][(a - 0x200000) >> 1] : NULL;
     if (a >= 0xC00000 && a < 0xD00000) return &s_tab_bios[(a & 0x1FFFF) >> 1];
     return NULL;
 }
+
+static ng_func_t *slot(uint32_t a) { return slot_in(a, bus_bank()); }
+
+static int in_bank_window(uint32_t a) { a &= 0xFFFFFF; return a >= 0x200000 && a < 0x300000; }
 
 static inline ng_func_t lookup(uint32_t a) {
     ng_func_t *s = slot(a);
@@ -76,13 +85,16 @@ static inline ng_func_t lookup(uint32_t a) {
 }
 
 void exec_init(const ng_func_entry_t *funcs, size_t nfuncs, int interp_only) {
+    s_nbanks = bus_bank_count();
+    if (s_nbanks > MAX_BANKS) s_nbanks = MAX_BANKS;
     s_tab_fixed = (ng_func_t *)calloc(0x80000, sizeof(ng_func_t));
-    s_tab_bank = (ng_func_t *)calloc(0x80000, sizeof(ng_func_t));
+    for (int b = 0; b < s_nbanks; b++) s_tab_bank[b] = (ng_func_t *)calloc(0x80000, sizeof(ng_func_t));
     s_tab_bios = (ng_func_t *)calloc(0x10000, sizeof(ng_func_t));
-    s_miss_seen = (uint8_t *)calloc(0x110000 / 8, 1);   /* one bit per word of the three regions */
+    /* one bit per word of every region: fixed, each bank, system ROM */
+    s_miss_seen = (uint8_t *)calloc(((size_t)(1 + s_nbanks) * 0x80000 + 0x10000) / 8, 1);
     s_interp_only = interp_only;
     for (size_t i = 0; i < nfuncs; i++) {
-        ng_func_t *s = slot(funcs[i].addr);
+        ng_func_t *s = slot_in(funcs[i].addr & 0xFFFFFF, (int)(funcs[i].addr >> 24));
         if (s) *s = funcs[i].fn;
     }
     m68k_init();
@@ -148,15 +160,18 @@ static void from_musashi(void) {
     CPU.stopped = (uint8_t)mus_stopped();
 }
 
+/* Misses in the bank window are recorded with the mapped bank in bits
+ * 24-31, the form the recompiler's --entries and the table use. */
 static void note_miss(uint32_t a) {
     ng_func_t *s = slot(a);
     if (!s) return;
+    int bank = in_bank_window(a) ? bus_bank() : 0;
     size_t bit = (size_t)(s - s_tab_fixed);
-    if (s >= s_tab_bank && s < s_tab_bank + 0x80000) bit = 0x80000 + (size_t)(s - s_tab_bank);
-    if (s >= s_tab_bios && s < s_tab_bios + 0x10000) bit = 0x100000 + (size_t)(s - s_tab_bios);
+    if (in_bank_window(a)) bit = (size_t)(1 + bank) * 0x80000 + (size_t)(s - s_tab_bank[bank]);
+    if (s >= s_tab_bios && s < s_tab_bios + 0x10000) bit = (size_t)(1 + s_nbanks) * 0x80000 + (size_t)(s - s_tab_bios);
     if (s_miss_seen[bit >> 3] & (1 << (bit & 7))) return;
     s_miss_seen[bit >> 3] |= (uint8_t)(1 << (bit & 7));
-    if (s_nmiss < MISS_MAX) s_miss[s_nmiss++] = a & 0xFFFFFE;
+    if (s_nmiss < MISS_MAX) s_miss[s_nmiss++] = (a & 0xFFFFFE) | ((uint32_t)bank << 24);
 }
 
 /* Where interpretation starts, weighted by how long it runs before

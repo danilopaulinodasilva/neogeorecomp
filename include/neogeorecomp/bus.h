@@ -90,6 +90,12 @@ uint8_t *bus_backup_ram(void);      /* 64 KB MVS backup RAM */
 void bus_select_bios_vectors(int bios);
 void bus_set_backup_lock(int locked);
 
+/* P ROM banks for the $200000 window: how many 1 MB banks the cart has
+ * (at least 1) and which one is mapped now. Recompiled code from banks
+ * other than 0 carries the bank in bits 24-31 of its table address. */
+int bus_bank_count(void);
+int bus_bank(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -48,6 +48,8 @@ typedef struct {
     const char   *srom;
     const char   *m1;
     const char   *vrom[NG_MAX_PARTS];
+    const char   *bios;               /* default system ROM; NULL = sp-s2.sp1 (MVS) */
+    int           aes;                /* 1 = run as an AES console (cart needs it) */
 } ng_game_t;
 
 /* Controller state for one frame. Bits are active-high here; io.c inverts. */

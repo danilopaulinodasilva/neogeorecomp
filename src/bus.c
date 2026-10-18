@@ -55,6 +55,20 @@ static void map_bank(void) {
     }
 }
 
+static size_t banked_size(void) {
+    return s_board.prom_size > 0x100000 ? s_board.prom_size - 0x100000 : 0;
+}
+
+int bus_bank_count(void) {
+    size_t banked = banked_size();
+    return banked > 0x100000 ? (int)(banked >> 20) : 1;
+}
+
+int bus_bank(void) {
+    size_t banked = banked_size();
+    return banked > 0x100000 ? (int)((s_bank % banked) >> 20) : 0;
+}
+
 void bus_select_bios_vectors(int bios) {
     s_bios_vectors = bios;
     R()[0] = bios ? s_vec_page : prom_page(0);

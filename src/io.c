@@ -132,7 +132,10 @@ static void system_latch(uint32_t a) {
     case 0: break;                                   /* shadow */
     case 1: bus_select_bios_vectors(!bit); break;    /* SWPBIOS / SWPROM */
     case 2: case 3: case 4: break;                   /* memory card control */
-    case 5: video_set_fix_bios(!bit); audio_select_bios_rom(!bit); break;  /* BRDFIX / CRTFIX */
+    case 5:                                          /* BRDFIX / CRTFIX */
+        /* The AES has no board SFIX or SM1: the cart's S and M1 always serve. */
+        if (s_mvs) { video_set_fix_bios(!bit); audio_select_bios_rom(!bit); }
+        break;
     case 6: bus_set_backup_lock(!bit); break;        /* SRAMLOCK / SRAMUNLOCK */
     case 7: pal_select_bank(bit ? 0 : 1); break;     /* PALBANK1 / PALBANK0 */
     }

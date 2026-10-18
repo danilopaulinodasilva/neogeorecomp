@@ -36,7 +36,7 @@ static void usage(const char *prog) {
         "usage: %s [options]\n"
         "  --rom-path DIR        game ROM files (default: roms)\n"
         "  --bios-path DIR       system ROM files (default: the ROM path)\n"
-        "  --bios FILE           system ROM (default: sp-s2.sp1, MVS Asia/Europe)\n"
+        "  --bios FILE           system ROM (default: the game's, else sp-s2.sp1, MVS Asia/Europe)\n"
         "  --headless            no window; run as fast as possible\n"
         "  --record FILE.mp4     pipe frames to ffmpeg\n"
         "  --frames N            stop after N frames\n"
@@ -50,7 +50,7 @@ static void usage(const char *prog) {
 
 static int parse_args(int argc, char **argv, options_t *o) {
     memset(o, 0, sizeof(*o));
-    o->rom_path = "roms"; o->scale = 3; o->frames = -1; o->bios_name = "sp-s2.sp1";
+    o->rom_path = "roms"; o->scale = 3; o->frames = -1;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *next = i + 1 < argc ? argv[i + 1] : NULL;
@@ -180,14 +180,16 @@ static void run_frame(void) {
     audio_sync();
 }
 
+static int s_mvs = 1;
+
 static void power_on(void) {
     ng_cycles = 0;
     ng_frame_start = 0;
     bus_reset();
     lspc_reset();
     pal_select_bank(0);
-    video_set_fix_bios(1);
-    audio_select_bios_rom(1);
+    video_set_fix_bios(s_mvs);
+    audio_select_bios_rom(s_mvs);
     audio_reset();
     exec_reset();
     ng_irq_pending = 4;        /* IRQ3 is asserted at power-on until the BIOS acks it */
@@ -199,6 +201,7 @@ int ng_main(int argc, char **argv, const ng_game_t *game,
     platform_early_init();
     if (parse_args(argc, argv, &o)) return 2;
     if (o.input && load_script(o.input)) return 1;
+    if (!o.bios_name) o.bios_name = game->bios ? game->bios : "sp-s2.sp1";
 
     size_t sz, bios_sz, sfix_sz, sm1_sz, lo_sz, srom_sz, m1_sz;
     uint8_t *prom = ng_load_prom(o.rom_path, game);
@@ -226,9 +229,10 @@ int ng_main(int argc, char **argv, const ng_game_t *game,
         vroms[nv] = v;
     }
 
-    ng_board_t board = {prom, game->prom_size, bios, 1};
+    s_mvs = !game->aes;
+    ng_board_t board = {prom, game->prom_size, bios, s_mvs};
     bus_init(&board);
-    io_reset(1);
+    io_reset(s_mvs);
     video_load(crom, game->crom_size, srom, srom_sz, sfix, lo);
     free(crom);
     audio_init(m1, m1_sz, sm1, vroms, vsizes, nv);

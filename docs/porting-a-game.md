@@ -39,6 +39,10 @@ const ng_game_t k_mslug = {
 
 Check the layout by looking for the `NEO-GEO` signature at `$100` of the fixed bank.
 
+P ROMs over 2 MB are banked: put the fixed 1 MB at `0` and the banks after it, and `prom_size` covers them all. The recompiler and the runtime handle up to 8 banks (docs/recompiler.md).
+
+Two optional fields pick the system. `.bios` names the default system ROM (otherwise `sp-s2.sp1`), and `.aes = 1` runs the board as an AES console: no backup RAM or coin slots, and the cart's S and M1 ROMs always serve. Use AES only when the cart needs it. The generator recompiles the default system ROM, so a player run with a different `--bios` runs that BIOS's code through the wrong table.
+
 ## 3. Run it interpreted first
 
 Build without `YOURGAME_ROM_DIR` (or run with `--interp`) and play headless:

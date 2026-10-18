@@ -64,6 +64,14 @@ After a `VRAMRW` write, the address advances by `VRAMMOD` but keeps bit 15: `add
 
 `$3A0001` + `2n` sets latch bit `n` to 0 and `$3A0011` + `2n` sets it to 1. The value written is ignored. The bits are shadow, vector select (0 = BIOS vectors), memory card ×3, fix/Z80 ROM select (0 = BIOS SFIX and SM1), backup RAM lock (0 = locked), and palette bank (0 = bank 1).
 
+### The AES has no board SFIX or SM1
+
+The fix/Z80 ROM select bit of the system latch only exists on the MVS. An AES has no board fix or sound ROMs, so the fix layer and the Z80 always use the cartridge's S and M1, whatever the system ROM writes to the latch. An AES BIOS that boots with the MVS behaviour draws its own screens from the wrong tiles.
+
+### P ROM bank selection
+
+A write to `$2FFFF0-$2FFFFF` maps a 1 MB bank of the P ROM into `$200000-$2FFFFF`. The low 3 bits pick the bank, which wraps over the banks fitted. Code runs from the banks, so the recompiled dispatch has to follow the mapped bank (docs/recompiler.md).
+
 ### Z80 bank selects use the upper byte of the port address
 
 `in a,($08)` selects a bank from the value of A, which is on the upper address lines during the I/O cycle. `in r,(c)` uses B instead. The Z80 core passes only the low byte, so `audio.c` recovers the upper byte from the opcode just executed.

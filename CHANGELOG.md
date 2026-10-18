@@ -7,6 +7,8 @@ All notable changes to this project. Format: [Keep a Changelog](https://keepacha
 The runtime is rebuilt as a generic model of the MVS board (#1). The previous runtime (v0.1.0) was shaped around Neo Drift Out with title-specific patches; nothing from it survives except the name.
 
 ### Added
+- **Multi-bank P ROMs** (up to 8 banks of 1 MB): the recompiler analyses each bank behind `$200000` in its own context, entries for banks other than 0 carry the bank in bits 24-31, and the runtime dispatches through one table per bank, picked by the mapped bank. `--dump-misses` records the bank. KOF98 (5 MB) verifies with 0 mismatches.
+- **AES mode** (`ng_game_t.aes`) and a default system ROM per game (`ng_game_t.bios`), used by both the player and the generator. On an AES the fix layer and the Z80 always use the cartridge's S and M1 ROMs.
 - **m68krecomp**, the 68000 static recompiler: a full 68000 decoder; recursive-descent discovery from vectors, cartridge header entry points, static call targets, jump tables and code pointers; readable C output with address and disassembly on every line; `--entries` for runtime-found entry points; a `--raw` mode and a standalone tool for flat images.
 - **Flat dispatch execution model**: return addresses on the emulated stack, interrupts as real 68000 exceptions, and a [Musashi](https://github.com/kstenerud/Musashi) fallback for addresses without a recompiled entry.
 - **`--verify`**: every native block is replayed in Musashi against the same memory and I/O values, and registers, flags and writes are compared.

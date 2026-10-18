@@ -17,6 +17,14 @@
  * of them; that costs size, never correctness, because the same address
  * always decodes to the same instructions.
  *
+ * A P ROM over 2 MB has several 1 MB banks behind the $200000 window. Each
+ * bank is its own region, and code is analysed in the context of one bank
+ * at a time: inside a bank, window addresses mean that bank. Code outside
+ * the window cannot know which bank will be mapped, so its references
+ * into the window become seeds in every bank where they look like code.
+ * Seeds and table entries for banks other than 0 carry the bank in bits
+ * 24-31 (the runtime uses the same form).
+ *
  * docs/recompiler.md describes the output and the execution model.
  */
 #include "recomp.h"
@@ -38,16 +46,34 @@ typedef struct {
     int32_t       *owner;          /* routine that the dispatch table maps the word to */
     insn_t       **cache;
     uint32_t      *visit;
+    int            bank;           /* P ROM bank behind the $200000 window, or -1 */
 } region_t;
 
-static region_t s_reg[8];
+static region_t s_reg[16];
 static int s_nreg;
 static const char *s_prefix = "";   /* prepended to every emitted symbol */
+
+/* The bank window addresses resolve to now (-1: none), the number of
+ * banks, and the context of code outside the window: bank 0 when there
+ * is only one, otherwise unknown. */
+static int s_cur_bank = -1, s_nbanks, s_fixed_bank;
+
+static int in_window(uint32_t a) { a &= 0xFFFFFF; return a >= 0x200000 && a < 0x300000; }
+
+/* `a` as a seed/table address: banks other than 0 in bits 24-31. */
+static uint32_t tag(uint32_t a, int bank) {
+    a &= 0xFFFFFF;
+    return in_window(a) && bank > 0 ? a | (uint32_t)bank << 24 : a;
+}
+
+/* The bank context that code at tagged address `t` runs in. */
+static int context_of(uint32_t t) { return in_window(t) ? (int)(t >> 24) : s_fixed_bank; }
 
 static region_t *find(uint32_t a) {
     a &= 0xFFFFFF;
     for (int i = 0; i < s_nreg; i++)
-        if (a >= s_reg[i].base && a < s_reg[i].base + s_reg[i].size) return &s_reg[i];
+        if (a >= s_reg[i].base && a < s_reg[i].base + s_reg[i].size &&
+            (s_reg[i].bank < 0 || s_reg[i].bank == s_cur_bank)) return &s_reg[i];
     return NULL;
 }
 
@@ -97,9 +123,13 @@ int rc_base_cycles(uint16_t opcode) { return mus_base_cycles(opcode); }
 static uint32_t *s_work;
 static size_t s_nwork, s_capwork;
 
-static void add_seed(uint32_t a) {
-    a &= 0xFFFFFF;
+/* `t` is a tagged address (see tag()). */
+static void add_seed(uint32_t t) {
+    int saved = s_cur_bank;
+    s_cur_bank = context_of(t);
+    uint32_t a = t & 0xFFFFFF;
     region_t *r = find(a);
+    s_cur_bank = saved;
     if (!r || (a & 1)) return;
     uint8_t *f = &r->flags[(a - r->base) >> 1];
     if (*f & F_SEED) return;
@@ -108,7 +138,7 @@ static void add_seed(uint32_t a) {
         s_capwork = s_capwork ? s_capwork * 2 : 4096;
         s_work = (uint32_t *)realloc(s_work, s_capwork * sizeof(uint32_t));
     }
-    s_work[s_nwork++] = a;
+    s_work[s_nwork++] = tag(a, r->bank);
 }
 
 static void mark_label(uint32_t a) {
@@ -116,7 +146,7 @@ static void mark_label(uint32_t a) {
     if (r && !(a & 1)) r->flags[(a - r->base) >> 1] |= F_LABEL;
 }
 
-typedef struct { uint32_t seed; uint32_t *addrs; int n; } routine_t;
+typedef struct { uint32_t seed; int bank; uint32_t *addrs; int n; } routine_t;
 static routine_t *s_rt;
 static int s_nrt, s_caprt;
 static uint32_t s_gen;
@@ -146,15 +176,43 @@ static int plausible_code(uint32_t a) {
     return 0;
 }
 
+/* Seeds `v`, seen from the current context, if it looks like code. From
+ * outside the window, a window address is tried in every bank. Returns
+ * whether any seed exists there now. */
+static int seed_if_code(uint32_t v) {
+    v &= 0xFFFFFF;
+    if (v & 1) return 0;
+    if (in_window(v) && s_cur_bank < 0) {
+        int any = 0, saved = s_cur_bank;
+        for (int b = 0; b < s_nbanks; b++) {
+            s_cur_bank = b;
+            any |= seed_if_code(v);
+        }
+        s_cur_bank = saved;
+        return any;
+    }
+    region_t *r = find(v);
+    if (!r) return 0;
+    if (r->flags[(v - r->base) >> 1] & F_SEED) return 1;
+    if (!plausible_code(v)) return 0;
+    add_seed(tag(v, s_cur_bank));
+    return 1;
+}
+
+/* A control transfer target known statically: seeded as is in the current
+ * context, or vetted in every bank when the bank is unknown. */
+static void seed_target(uint32_t t) {
+    if (in_window(t) && s_cur_bank < 0) seed_if_code(t);
+    else add_seed(tag(t, s_cur_bank));
+}
+
 /* Candidate code pointers: the task/coroutine style Neo Geo games use
  * stores resume addresses with `lea (next,pc),a1` or `move.l #next,...`
  * and later reaches them with `jmp (a0)`. */
 static void note_code_pointer(uint32_t t) {
     t &= 0xFFFFFF;
-    region_t *r = find(t);
-    if (!r || (t & 1) || (r->flags[(t - r->base) >> 1] & F_SEED)) return;
-    if (t < 0x200 && r->base == 0) return;    /* vectors and cartridge header */
-    if (plausible_code(t)) add_seed(t);
+    if (t < 0x200 && find(t) && find(t)->base == 0) return;    /* vectors and cartridge header */
+    seed_if_code(t);
 }
 
 /* ---- jump tables ----
@@ -168,19 +226,14 @@ static uint32_t rd32(uint32_t a);
 /* movea.l tbl(pc,d0.w),a0 ; jmp (a0)   -- absolute pointers */
 static void scan_long_table(uint32_t t) {
     for (int k = 0; k < 256; k++) {
-        uint32_t v = rd32(t + 4u * k) & 0xFFFFFF;
-        region_t *r = find(v);
-        if (!r || (v & 1) || !plausible_code(v)) break;
-        add_seed(v);
+        if (!seed_if_code(rd32(t + 4u * k))) break;
     }
 }
 
 /* move.w tbl(pc,d0.w),d0 ; jmp base(pc,d0.w)   -- 16-bit offsets from base */
 static void scan_word_table(uint32_t t, uint32_t base) {
     for (int k = 0; k < 256; k++) {
-        uint32_t v = (base + (uint32_t)(int32_t)(int16_t)rd16(t + 2u * k)) & 0xFFFFFF;
-        if (!find(v) || (v & 1) || !plausible_code(v)) break;
-        add_seed(v);
+        if (!seed_if_code(base + (uint32_t)(int32_t)(int16_t)rd16(t + 2u * k))) break;
     }
 }
 
@@ -190,7 +243,7 @@ static void scan_branch_table(uint32_t t) {
     for (int k = 0; k < 256; k++) {
         const insn_t *in = decode_at(t);
         if (!in || (in->op != OP_BRA && in->op != OP_JMP)) break;
-        add_seed(t);
+        add_seed(tag(t, s_cur_bank));
         t += (uint32_t)in->len;
     }
 }
@@ -200,8 +253,11 @@ static int static_target(const ea_t *e, uint32_t *t) {
     return 0;
 }
 
+/* `seed` is tagged; the routine's own addresses are plain 24-bit ones,
+ * read in the seed's bank context. */
 static void explore(uint32_t seed) {
     s_gen++;
+    s_cur_bank = context_of(seed);
     uint32_t *stack = NULL, *list = NULL;
     size_t nstack = 0, capstack = 0, nlist = 0, caplist = 0;
 #define PUSH(v) do { if (nstack == capstack) { capstack = capstack ? capstack * 2 : 256; \
@@ -210,7 +266,7 @@ static void explore(uint32_t seed) {
      * address register, and the last `move.w tbl(pc,Xn),Dn` offset table. */
     uint32_t lea_pc[8] = {0};
     uint32_t word_table = 0;
-    PUSH(seed);
+    PUSH(seed & 0xFFFFFF);
     while (nstack) {
         uint32_t a = stack[--nstack];
         region_t *r = find(a);
@@ -255,15 +311,15 @@ static void explore(uint32_t seed) {
             PUSH(next);
             break;
         case OP_BSR:
-            add_seed(in->target);
+            seed_target(in->target);
             mark_label(next); PUSH(next);
             break;
         case OP_JSR:
-            if (static_target(&in->src, &t)) add_seed(t);
+            if (static_target(&in->src, &t)) seed_target(t);
             mark_label(next); PUSH(next);
             break;
         case OP_JMP:
-            if (static_target(&in->src, &t)) add_seed(t);
+            if (static_target(&in->src, &t)) seed_target(t);
             break;
         case OP_RTS: case OP_RTE: case OP_RTR: case OP_ILLEGAL: case OP_LINEA: case OP_LINEF:
             break;
@@ -281,6 +337,7 @@ static void explore(uint32_t seed) {
     qsort(list, nlist, sizeof(uint32_t), cmp_u32);
     if (s_nrt == s_caprt) { s_caprt = s_caprt ? s_caprt * 2 : 1024; s_rt = (routine_t *)realloc(s_rt, (size_t)s_caprt * sizeof(routine_t)); }
     s_rt[s_nrt].seed = seed;
+    s_rt[s_nrt].bank = s_cur_bank;
     s_rt[s_nrt].addrs = list;
     s_rt[s_nrt].n = (int)nlist;
     s_nrt++;
@@ -319,7 +376,8 @@ static uint8_t flags_at(uint32_t a) {
 
 static void emit_routine(FILE *o, int idx) {
     const routine_t *rt = &s_rt[idx];
-    rc_ctx_t ctx = {rt->seed, rt->addrs, rt->n};
+    rc_ctx_t ctx = {rt->seed & 0xFFFFFF, rt->addrs, rt->n};
+    s_cur_bank = rt->bank;
     fprintf(o, "\n/* routine $%06X: %d instructions */\nvoid %sr_%06X(void) {\n    switch (CPU.pc) {\n",
             rt->seed, rt->n, s_prefix, rt->seed);
     for (int i = 0; i < rt->n; i++) {
@@ -390,7 +448,7 @@ static int write_output(const char *dir, int nfiles, const char *game) {
         region_t *r = &s_reg[ri];
         for (uint32_t w = 0; w < r->size / 2; w++) {
             if (r->owner[w] < 0) continue;
-            fprintf(t, "    {0x%06Xu, %sr_%06X},\n", r->base + w * 2, s_prefix, s_rt[r->owner[w]].seed);
+            fprintf(t, "    {0x%06Xu, %sr_%06X},\n", tag(r->base + w * 2, r->bank), s_prefix, s_rt[r->owner[w]].seed);
             count++;
         }
     }
@@ -400,9 +458,9 @@ static int write_output(const char *dir, int nfiles, const char *game) {
     return 0;
 }
 
-static void add_region(const char *name, uint32_t base, uint32_t size, const uint8_t *data) {
+static void add_region(const char *name, uint32_t base, uint32_t size, const uint8_t *data, int bank) {
     region_t *r = &s_reg[s_nreg++];
-    r->name = name; r->base = base; r->size = size; r->data = data;
+    r->name = name; r->base = base; r->size = size; r->data = data; r->bank = bank;
     r->flags = (uint8_t *)calloc(size / 2, 1);
     r->owner = (int32_t *)malloc(size / 2 * sizeof(int32_t));
     for (uint32_t i = 0; i < size / 2; i++) r->owner[i] = -1;
@@ -436,9 +494,11 @@ static int generate(const char *out, int nfiles, const char *name, int scan_poin
          * any aligned 32-bit value in the program that points at plausible
          * code becomes a seed. */
         size_t before = s_nwork;
-        for (int ri = 0; ri < s_nreg; ri++)
+        for (int ri = 0; ri < s_nreg; ri++) {
+            s_cur_bank = s_reg[ri].bank >= 0 ? s_reg[ri].bank : s_fixed_bank;
             for (uint32_t off = 0; off + 4 <= s_reg[ri].size; off += 2)
                 note_code_pointer(rd32(s_reg[ri].base + off));
+        }
         fprintf(stderr, "[m68krecomp] pointer scan: %zu seeds\n", s_nwork - before);
     }
 
@@ -447,11 +507,13 @@ static int generate(const char *out, int nfiles, const char *name, int scan_poin
     /* Seeds own themselves; other entry points go to the first routine
      * that contains them. */
     for (int i = 0; i < s_nrt; i++) {
-        int32_t *ow = owner_slot(s_rt[i].seed);
+        s_cur_bank = s_rt[i].bank;
+        int32_t *ow = owner_slot(s_rt[i].seed & 0xFFFFFF);
         if (ow && s_rt[i].n > 0) *ow = i;
     }
     for (int i = 0; i < s_nrt; i++)
         for (int k = 0; k < s_rt[i].n; k++) {
+            s_cur_bank = s_rt[i].bank;
             uint32_t a = s_rt[i].addrs[k];
             int32_t *ow = owner_slot(a);
             if (ow && *ow < 0 && (flags_at(a) & (F_SEED | F_LABEL))) *ow = i;
@@ -464,7 +526,7 @@ static int generate(const char *out, int nfiles, const char *name, int scan_poin
 }
 
 int ng_recomp_main(int argc, char **argv, const ng_game_t *game) {
-    const char *rom_path = "roms", *bios_path = NULL, *bios_name = "sp-s2.sp1", *out = "generated";
+    const char *rom_path = "roms", *bios_path = NULL, *bios_name = NULL, *out = "generated";
     const char *entries[16];
     int nentries = 0, nfiles = 16, scan_pointers = 1;
     for (int i = 1; i < argc; i++) {
@@ -483,6 +545,7 @@ int ng_recomp_main(int argc, char **argv, const ng_game_t *game) {
         }
     }
     if (!bios_path) bios_path = rom_path;
+    if (!bios_name) bios_name = game->bios ? game->bios : "sp-s2.sp1";
     if (nfiles < 1) nfiles = 1;
 
     uint8_t *prom = ng_load_prom(rom_path, game);
@@ -492,12 +555,17 @@ int ng_recomp_main(int argc, char **argv, const ng_game_t *game) {
     ng_swap16(bios, 0x20000);
 
     uint32_t fixed = game->prom_size < 0x100000 ? game->prom_size : 0x100000;
-    add_region("prom", 0x000000, fixed, prom);
+    add_region("prom", 0x000000, fixed, prom, -1);
     if (game->prom_size > 0x100000) {
         uint32_t banked = game->prom_size - 0x100000;
-        add_region("bank", 0x200000, banked > 0x100000 ? 0x100000 : banked, prom + 0x100000);
+        s_nbanks = banked > 0x100000 ? (int)(banked >> 20) : 1;
+        if (s_nbanks > 8) s_nbanks = 8;
+        for (int b = 0; b < s_nbanks; b++)
+            add_region("bank", 0x200000, banked > 0x100000 ? 0x100000 : banked, prom + 0x100000 + ((uint32_t)b << 20), b);
     }
-    add_region("bios", 0xC00000, 0x20000, bios);
+    add_region("bios", 0xC00000, 0x20000, bios, -1);
+    s_fixed_bank = s_nbanks > 1 ? -1 : 0;
+    s_cur_bank = s_fixed_bank;
 
     m68k_init();
     m68k_set_cpu_type(M68K_CPU_TYPE_68000);
@@ -542,7 +610,7 @@ int rc_raw_main(int argc, char **argv) {
     uint8_t *img = (uint8_t *)calloc(1, size);
     if (fread(img, 1, (size_t)n, f) != (size_t)n) { fclose(f); return 1; }
     fclose(f);
-    add_region("raw", base, size, img);
+    add_region("raw", base, size, img, -1);
     m68k_init();
     m68k_set_cpu_type(M68K_CPU_TYPE_68000);
     for (int i = 0; i < nents; i++) add_seed(ents[i]);

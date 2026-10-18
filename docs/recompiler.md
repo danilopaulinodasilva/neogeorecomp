@@ -4,13 +4,19 @@
 
 ## Input
 
-The generator loads the program exactly as the runtime does, through `src/romload.c` and the game's `ng_game_t`. It sees three regions:
+The generator loads the program exactly as the runtime does, through `src/romload.c` and the game's `ng_game_t`. It sees these regions:
 
 | Region | Base | Contents |
 |---|---|---|
 | prom | `$000000` | the fixed 1 MB of the P ROM |
-| bank | `$200000` | the first banked MB, if the P ROM is larger than 1 MB |
-| bios | `$C00000` | the 128 KB system ROM |
+| bank | `$200000` | each banked MB, one region per bank, if the P ROM is larger than 1 MB |
+| bios | `$C00000` | the 128 KB system ROM (the game's `.bios`, or `--bios`) |
+
+### Banks
+
+A P ROM over 2 MB has several 1 MB banks behind the `$200000` window, and which one is mapped is only known at runtime. Code is analysed in the context of one bank at a time. Inside bank *n*, a window address means bank *n*. Code outside the window can't know the bank, so its references into the window (call targets, table entries, code pointers) become seeds in every bank where they look like code. With a single bank, nothing changes: the window is always bank 0.
+
+Routines, table entries and `--entries` lines for banks other than 0 carry the bank in bits 24-31: `$01200400` is `$200400` in bank 1. The runtime keeps one dispatch table per bank and picks it by the bank mapped when control arrives, and `--dump-misses` writes the same form. A routine never follows control into another bank: code that switches the bank it is running from would mismatch under `--verify`.
 
 ## Discovery
 
