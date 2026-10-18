@@ -18,7 +18,7 @@
 
 int64_t ng_frame_start;
 
-static uint32_t s_fb[NG_SCREEN_W * NG_SCREEN_H];
+static uint32_t s_fb[NG_MAX_SCREEN_W * NG_SCREEN_H];
 
 /* ---- options ---- */
 
@@ -45,7 +45,9 @@ static void usage(const char *prog) {
         "  --interp              run everything in the interpreter\n"
         "  --verify              re-run every recompiled block in the interpreter and compare\n"
         "  --dump-misses FILE    write interpreted entry points for the recompiler\n"
-        "  --scale N             window scale (default 3)\n", prog);
+        "  --scale N             window scale (default 3)\n"
+        "  --width N             output width, 320-%d: margins show what lies just off screen\n"
+        "  --widescreen          --width 400 (16:9 with square pixels)\n", prog, NG_MAX_SCREEN_W);
 }
 
 static int parse_args(int argc, char **argv, options_t *o) {
@@ -65,6 +67,8 @@ static int parse_args(int argc, char **argv, options_t *o) {
         else if (!strcmp(a, "--verify")) o->verify = 1;
         else if (!strcmp(a, "--dump-misses") && next) { o->dump_misses = next; i++; }
         else if (!strcmp(a, "--scale") && next) { o->scale = atoi(next); i++; }
+        else if (!strcmp(a, "--width") && next) { ng_screen_w = atoi(next); i++; }
+        else if (!strcmp(a, "--widescreen")) ng_screen_w = 400;
         else if (!strcmp(a, "--screenshot") && next) {
             const char *colon = strchr(next, ':');
             if (!colon || o->nshots == MAX_SHOTS) { usage(argv[0]); return -1; }
@@ -76,6 +80,11 @@ static int parse_args(int argc, char **argv, options_t *o) {
         else { usage(argv[0]); return -1; }
     }
     if (!o->bios_path) o->bios_path = o->rom_path;
+    /* even, so both margins are equal */
+    if (ng_screen_w < NG_SCREEN_W || ng_screen_w > NG_MAX_SCREEN_W || (ng_screen_w & 1)) {
+        fprintf(stderr, "error: --width must be an even number from %d to %d\n", NG_SCREEN_W, NG_MAX_SCREEN_W);
+        return -1;
+    }
     return 0;
 }
 
@@ -169,7 +178,7 @@ static void run_frame(void) {
         int64_t ls = fs + (int64_t)line * NG_CLOCKS_PER_LINE;
         run_until(ls);
         if (line >= NG_FIRST_VISIBLE && line < NG_VBLANK_LINE)
-            video_render_line(line - NG_FIRST_VISIBLE, s_fb + (line - NG_FIRST_VISIBLE) * NG_SCREEN_W);
+            video_render_line(line - NG_FIRST_VISIBLE, s_fb + (line - NG_FIRST_VISIBLE) * ng_screen_w);
         if (line == NG_VBLANK_LINE) {
             run_until(ls + NG_VBLANK_HPOS * 2);
             lspc_vblank();
@@ -229,6 +238,7 @@ int ng_main(int argc, char **argv, const ng_game_t *game,
         vroms[nv] = v;
     }
 
+    if (game->patch) game->patch(prom, game->prom_size, ng_screen_w);
     s_mvs = !game->aes;
     ng_board_t board = {prom, game->prom_size, bios, s_mvs};
     bus_init(&board);
@@ -255,7 +265,7 @@ int ng_main(int argc, char **argv, const ng_game_t *game,
         platform_audio(samples, audio_take_samples(samples, 800));
         for (int i = 0; i < o.nshots; i++)
             if (o.shots[i].frame == frame) {
-                if (write_png(o.shots[i].path, s_fb, NG_SCREEN_W, NG_SCREEN_H))
+                if (write_png(o.shots[i].path, s_fb, ng_screen_w, NG_SCREEN_H))
                     fprintf(stderr, "error: cannot write %s\n", o.shots[i].path);
                 else
                     fprintf(stderr, "[neogeorecomp] frame %ld -> %s\n", frame, o.shots[i].path);

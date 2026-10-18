@@ -23,6 +23,7 @@ typedef struct {
     int      xreg;       /* index register 0-15 (8-15 = A0-A7) */
     int      xlong;      /* index is .l */
     uint32_t value;      /* immediate, absolute address, or PC-relative base */
+    uint32_t ext;        /* immediate: address of its extension word(s) */
 } ea_t;
 
 typedef enum {

@@ -52,6 +52,20 @@ static void ea_addr(FILE *o, const ea_t *e, int size, const char *var) {
     }
 }
 
+/* An immediate operand as a C expression: a constant, or a read of the
+ * ROM when the game patches that word at load time. That read is part of
+ * the instruction fetch, so it uses bus_peek16, which --verify does not
+ * log (the interpreter's fetches aren't logged either). */
+static const char *imm_expr(const ea_t *e, int size) {
+    static char buf[96];
+    const char *t = utype(size);
+    if (!rc_live_imm(e->ext, size)) snprintf(buf, sizeof(buf), "(%s)0x%Xu", t, e->value);
+    else if (size == 4)
+        snprintf(buf, sizeof(buf), "((uint32_t)bus_peek16(0x%06Xu) << 16 | bus_peek16(0x%06Xu))", e->ext, e->ext + 2);
+    else snprintf(buf, sizeof(buf), "(%s)bus_peek16(0x%06Xu)", t, e->ext);
+    return buf;
+}
+
 static int is_mem(const ea_t *e) {
     return e->mode != EA_DN && e->mode != EA_AN && e->mode != EA_IMM && e->mode != EA_NONE;
 }
@@ -62,7 +76,7 @@ static void ea_read(FILE *o, const ea_t *e, int size, const char *var, const cha
     switch (e->mode) {
     case EA_DN: fprintf(o, "%s %s = (%s)CPU.d[%d]; ", t, var, t, e->reg); return;
     case EA_AN: fprintf(o, "%s %s = (%s)CPU.a[%d]; ", t, var, t, e->reg); return;
-    case EA_IMM: fprintf(o, "%s %s = (%s)0x%Xu; ", t, var, t, e->value); return;
+    case EA_IMM: fprintf(o, "%s %s = %s; ", t, var, imm_expr(e, size)); return;
     default:
         ea_addr(o, e, size, avar);
         fprintf(o, "%s %s = ng_r%d(%s); ", t, var, bits(size), avar);
@@ -234,12 +248,9 @@ void rc_emit_insn(FILE *o, const rc_ctx_t *ctx, const insn_t *in) {
         fprintf(o, "%s s = (%s)CPU.d[%d]; ", t, t, in->src.reg);
         alu_rmw(o, in, in->op, "s");
         break;
-    case OP_ADDI: case OP_SUBI: case OP_ANDI: case OP_ORI: case OP_EORI: {
-        char imm[32];
-        snprintf(imm, sizeof(imm), "(%s)0x%Xu", t, in->src.value);
-        alu_rmw(o, in, in->op, imm);
+    case OP_ADDI: case OP_SUBI: case OP_ANDI: case OP_ORI: case OP_EORI:
+        alu_rmw(o, in, in->op, imm_expr(&in->src, sz));
         break;
-    }
     case OP_ADDQ: case OP_SUBQ:
         if (in->dst.mode == EA_AN) {
             fprintf(o, "CPU.a[%d] %s= %du; ", in->dst.reg, in->op == OP_ADDQ ? "+" : "-", in->data);
@@ -263,7 +274,7 @@ void rc_emit_insn(FILE *o, const rc_ctx_t *ctx, const insn_t *in) {
         break;
     case OP_CMPI:
         ea_read(o, &in->dst, sz, "d", "ad");
-        fprintf(o, "ng_cmp%d((%s)0x%Xu, d); ", b, t, in->src.value);
+        fprintf(o, "ng_cmp%d(%s, d); ", b, imm_expr(&in->src, sz));
         break;
     case OP_CMPM:
         ea_read(o, &in->src, sz, "s", "as");

@@ -66,6 +66,18 @@ static uint32_t tag(uint32_t a, int bank) {
     return in_window(a) && bank > 0 ? a | (uint32_t)bank << 24 : a;
 }
 
+/* ng_game_t.live_words, and which of them code used as an immediate. */
+static const uint32_t *s_live;
+static uint8_t *s_live_used;
+
+int rc_live_imm(uint32_t addr, int size) {
+    if (!s_live) return 0;
+    uint32_t t = tag(addr, s_cur_bank);
+    for (int i = 0; s_live[i]; i++)
+        if (s_live[i] == t || (size == 4 && s_live[i] == t + 2)) { s_live_used[i] = 1; return 1; }
+    return 0;
+}
+
 /* The bank context that code at tagged address `t` runs in. */
 static int context_of(uint32_t t) { return in_window(t) ? (int)(t >> 24) : s_fixed_bank; }
 
@@ -455,6 +467,11 @@ static int write_output(const char *dir, int nfiles, const char *game) {
     fprintf(t, "};\nconst size_t %sng_recomp_count = %zu;\n", s_prefix, count);
     fclose(t);
     fprintf(stderr, "[m68krecomp] %d routines, %zu dispatch entries -> %s\n", s_nrt, count, dir);
+    /* A live word that no recompiled instruction reads as an immediate
+     * keeps working in the interpreter, but may be a wrong address. */
+    for (int i = 0; s_live && s_live[i]; i++)
+        if (!s_live_used[i])
+            fprintf(stderr, "[m68krecomp] warning: live word $%06X is not an immediate in recompiled code\n", s_live[i]);
     return 0;
 }
 
@@ -547,6 +564,12 @@ int ng_recomp_main(int argc, char **argv, const ng_game_t *game) {
     if (!bios_path) bios_path = rom_path;
     if (!bios_name) bios_name = game->bios ? game->bios : "sp-s2.sp1";
     if (nfiles < 1) nfiles = 1;
+    if (game->live_words) {
+        size_t n = 0;
+        while (game->live_words[n]) n++;
+        s_live = game->live_words;
+        s_live_used = (uint8_t *)calloc(n + 1, 1);
+    }
 
     uint8_t *prom = ng_load_prom(rom_path, game);
     size_t bios_size;

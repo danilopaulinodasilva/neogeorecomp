@@ -84,7 +84,7 @@ int platform_init(const char *title, int scale, int headless, const char *record
         snprintf(cmd, sizeof(cmd),
                  "ffmpeg -loglevel error -y -f rawvideo -pix_fmt bgra -s %dx%d -r 59.185606 -i - "
                  "-vf scale=%d:%d:flags=neighbor -c:v libx264 -pix_fmt yuv420p -crf 18 \"%s\"",
-                 NG_SCREEN_W, NG_SCREEN_H, NG_SCREEN_W * 2, NG_SCREEN_H * 2, record_path);
+                 ng_screen_w, NG_SCREEN_H, ng_screen_w * 2, NG_SCREEN_H * 2, record_path);
         s_rec = popen(cmd, "wb");
         if (!s_rec) { fprintf(stderr, "error: cannot start ffmpeg for --record\n"); return -1; }
     }
@@ -92,7 +92,7 @@ int platform_init(const char *title, int scale, int headless, const char *record
 }
 
 bool platform_frame(const uint32_t *fb, ng_input_t *in) {
-    if (fb && s_rec) fwrite(fb, 4, NG_SCREEN_W * NG_SCREEN_H, s_rec);
+    if (fb && s_rec) fwrite(fb, 4, (size_t)ng_screen_w * NG_SCREEN_H, s_rec);
     return s_headless ? true : window_frame(fb, in);
 }
 

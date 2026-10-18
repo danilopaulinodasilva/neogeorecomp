@@ -16,6 +16,9 @@ typedef struct {
 } rc_ctx_t;
 
 int  rc_in_routine(const rc_ctx_t *ctx, uint32_t addr);
+/* Is the immediate whose extension words start at `addr` (size 1, 2 or 4)
+ * one the game patches at load time (ng_game_t.live_words)? */
+int  rc_live_imm(uint32_t addr, int size);
 int  rc_base_cycles(uint16_t opcode);
 void rc_emit_insn(FILE *o, const rc_ctx_t *ctx, const insn_t *in);
 int  rc_raw_main(int argc, char **argv);

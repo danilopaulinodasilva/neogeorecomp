@@ -145,9 +145,18 @@ static int on_line(int scanline, int y, int rows) {
     return scanline >= y || scanline <= max_y;
 }
 
+int ng_screen_w = NG_SCREEN_W;
+
+/* Screen column of hardware X `x`: the left margin shows the X values
+ * just below 512 (sprite X wraps at 512). */
+static int screen_x(int x) { return (x + (ng_screen_w - NG_SCREEN_W) / 2) & 0x1FF; }
+
 static void draw_sprites(int scanline, uint32_t *row) {
     const uint32_t *pens = s_pens[s_pal_bank];
     int x = 0, y = 0, rows = 0, zoom_y = 0, zoom_x = 0, drawn = 0;
+    /* The hardware draws 96 sprites per line. A wider screen needs more
+     * columns of background, so the limit grows with it. */
+    int max_per_line = 96 * ng_screen_w / NG_SCREEN_W;
 
     for (int n = 0; n < 381; n++) {
         uint16_t ctl = lspc_vram[0x8200 + n];
@@ -163,8 +172,9 @@ static void draw_sprites(int scanline, uint32_t *row) {
             rows = ctl & 0x3F;
         }
         if (rows == 0 || !on_line(scanline, y, rows)) continue;
-        if (++drawn > 96) break;
-        if (x >= 0x140 && x <= 0x1F0) continue;
+        if (++drawn > max_per_line) break;
+        int sx = screen_x(x);
+        if (sx >= ng_screen_w && sx <= 0x1F0) continue;
 
         int sprite_line = (scanline - y) & 0x1FF;
         int zoom_line = sprite_line & 0xFF;
@@ -192,11 +202,11 @@ static void draw_sprites(int scanline, uint32_t *row) {
         const uint8_t *gfx = s_spr + ((size_t)(code & s_spr_tiles_mask) << 8) + (tile_row << 4);
         const uint32_t *pal = pens + ((attr >> 8) << 4);
         const uint8_t *zx = s_zoom_x[zoom_x];
-        int px = x;
+        int px = sx;
         for (int i = 0; i < 16; i++) {
             if (!zx[i]) continue;
             int c = (attr & 1) ? gfx[15 - i] : gfx[i];
-            if (c && px < NG_SCREEN_W) row[px] = pal[c];
+            if (c && px < ng_screen_w) row[px] = pal[c];
             px = (px + 1) & 0x1FF;
         }
     }
@@ -207,7 +217,11 @@ static void draw_fix(int scanline, uint32_t *row) {
     const uint8_t *gfx = s_fix_use_bios ? s_fix_bios : s_fix_cart;
     size_t tiles = s_fix_use_bios ? 0x20000 / 32 : s_fix_cart_tiles;
     int map_row = scanline >> 3, y = scanline & 7;
-    for (int col = 0; col < 40; col++) {
+    row += (ng_screen_w - NG_SCREEN_W) / 2;     /* the fix layer covers only the hardware width */
+    /* Games blank columns 0 and 39, which CRTs hid in the overscan; with
+     * margins they would be bars down the middle of the picture. */
+    int first = ng_screen_w > NG_SCREEN_W ? 1 : 0, last = ng_screen_w > NG_SCREEN_W ? 39 : 40;
+    for (int col = first; col < last; col++) {
         uint16_t e = lspc_vram[0x7000 + (col << 5) + map_row];
         uint32_t code = e & 0x0FFF;
         if (code >= tiles) continue;
@@ -221,7 +235,7 @@ static void draw_fix(int scanline, uint32_t *row) {
 void video_render_line(int line, uint32_t *row) {
     int scanline = line + NG_FIRST_VISIBLE;
     uint32_t backdrop = s_pens[s_pal_bank][0xFFF];
-    for (int i = 0; i < NG_SCREEN_W; i++) row[i] = backdrop;
+    for (int i = 0; i < ng_screen_w; i++) row[i] = backdrop;
     draw_sprites(scanline, row);
     draw_fix(scanline, row);
 }

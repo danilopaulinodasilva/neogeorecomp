@@ -21,8 +21,13 @@
 #define NG_FIRST_VISIBLE     16
 #define NG_VBLANK_LINE       240
 #define NG_VBLANK_HPOS       0x11F       /* pixel within line 240 where IRQ1 fires */
-#define NG_SCREEN_W          320
+#define NG_SCREEN_W          320       /* the hardware's visible width */
 #define NG_SCREEN_H          224
+#define NG_MAX_SCREEN_W      496       /* widest output: 512 minus one sprite strip */
+
+/* Output width: NG_SCREEN_W plus equal margins left and right (--width).
+ * The margins show what the hardware would draw just off screen. */
+extern int ng_screen_w;
 
 /* ---- interrupts (level 1 = VBlank, 2 = LSPC timer, 3 = cold reset) ---- */
 extern uint8_t ng_irq_pending;           /* bit n-1 = level n pending */

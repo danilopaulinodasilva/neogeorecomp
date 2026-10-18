@@ -18,6 +18,10 @@ A P ROM over 2 MB has several 1 MB banks behind the `$200000` window, and which 
 
 Routines, table entries and `--entries` lines for banks other than 0 carry the bank in bits 24-31: `$01200400` is `$200400` in bank 1. The runtime keeps one dispatch table per bank and picks it by the bank mapped when control arrives, and `--dump-misses` writes the same form. A routine never follows control into another bank: code that switches the bank it is running from would mismatch under `--verify`.
 
+### Live words
+
+A game that patches its program at load time (`ng_game_t.patch`) lists the words it changes in `ng_game_t.live_words`. When an instruction's immediate operand is one of them, the emitter reads it from memory with `bus_peek16` instead of writing the constant, so the code follows the patch. The read is part of the instruction fetch, which `--verify` doesn't log for either side. The generator warns about a live word that no recompiled instruction uses as an immediate.
+
 ## Discovery
 
 Discovery is recursive descent from seeds. Each seed becomes one **routine**: everything reachable from it without leaving through a call, return or jump. Branches, `Bcc` and `DBcc` stay inside, and `BSR`/`JSR` continue at their return address. The seeds are:

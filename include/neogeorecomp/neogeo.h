@@ -50,6 +50,15 @@ typedef struct {
     const char   *vrom[NG_MAX_PARTS];
     const char   *bios;               /* default system ROM; NULL = sp-s2.sp1 (MVS) */
     int           aes;                /* 1 = run as an AES console (cart needs it) */
+    /* Optional: changes the loaded P ROM (68k byte order) before the board
+     * starts, given the output width (--width). A game uses it for options
+     * such as widescreen, which only make sense for that game. */
+    void        (*patch)(uint8_t *prom, size_t size, int screen_w);
+    /* The P ROM words `patch` may change, ending with 0 (banked addresses
+     * in the recompiler's form, bank in bits 24-31). Recompiled code that
+     * uses one as an immediate operand reads it from memory instead of
+     * baking it in, so it sees the patched value. */
+    const uint32_t *live_words;
 } ng_game_t;
 
 /* Controller state for one frame. Bits are active-high here; io.c inverts. */

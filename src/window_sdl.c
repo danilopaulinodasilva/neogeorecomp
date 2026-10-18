@@ -21,11 +21,11 @@ int window_open(const char *title, int scale) {
         return -1;
     }
     s_win = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                             NG_SCREEN_W * scale, NG_SCREEN_H * scale, SDL_WINDOW_RESIZABLE);
+                             ng_screen_w * scale, NG_SCREEN_H * scale, SDL_WINDOW_RESIZABLE);
     s_ren = SDL_CreateRenderer(s_win, -1, SDL_RENDERER_ACCELERATED);
-    SDL_RenderSetLogicalSize(s_ren, NG_SCREEN_W, NG_SCREEN_H);
+    SDL_RenderSetLogicalSize(s_ren, ng_screen_w, NG_SCREEN_H);
     s_tex = SDL_CreateTexture(s_ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-                              NG_SCREEN_W, NG_SCREEN_H);
+                              ng_screen_w, NG_SCREEN_H);
     s_next_tick = SDL_GetPerformanceCounter();
     return 0;
 }
@@ -57,7 +57,7 @@ bool window_frame(const uint32_t *fb, ng_input_t *in) {
     }
     read_keys(in);
     if (fb) {
-        SDL_UpdateTexture(s_tex, NULL, fb, NG_SCREEN_W * 4);
+        SDL_UpdateTexture(s_tex, NULL, fb, ng_screen_w * 4);
         SDL_RenderClear(s_ren);
         SDL_RenderCopy(s_ren, s_tex, NULL, NULL);
         SDL_RenderPresent(s_ren);

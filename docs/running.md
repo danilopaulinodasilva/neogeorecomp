@@ -21,7 +21,7 @@ error: missing ROM files; see docs/running.md for the expected set
 ```
   --rom-path DIR        game ROM files (default: roms)
   --bios-path DIR       system ROM files (default: the ROM path)
-  --bios FILE           system ROM (default: sp-s2.sp1, MVS Asia/Europe)
+  --bios FILE           system ROM (default: the game's, else sp-s2.sp1, MVS Asia/Europe)
   --headless            no window; run as fast as possible
   --record FILE.mp4     pipe frames to ffmpeg
   --frames N            stop after N frames
@@ -31,7 +31,15 @@ error: missing ROM files; see docs/running.md for the expected set
   --verify              re-run every recompiled block in the interpreter and compare
   --dump-misses FILE    write interpreted entry points for the recompiler
   --scale N             window scale (default 3)
+  --width N             output width, 320-496: margins show what lies just off screen
+  --widescreen          --width 400 (16:9 with square pixels)
 ```
+
+## Wider output
+
+`--width` adds equal margins left and right of the 320-pixel picture. They show what the hardware would draw just off screen: sprite X wraps at 512, so the left margin holds X values just below 512 and the right one those just above 320. The fix layer stays 320 wide in the middle, without its columns 0 and 39, which games blank to hide the CRT overscan. The sprites-per-line limit grows with the width (96 at 320).
+
+On its own this shows whatever the game left off screen, usually nothing, or objects parked out of view. A game repo can patch its program to draw more (`ng_game_t.patch`, docs/porting-a-game.md); KOF98's widescreen does that.
 
 Frame numbers count 59.19 Hz video frames from power-on. The MVS BIOS eyecatcher finishes at about frame 600, and Metal Slug's title appears at about frame 1200.
 

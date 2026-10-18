@@ -67,6 +67,7 @@ static int ea_decode(cursor_t *c, int mode, int reg, int size, ea_t *ea) {
         }
         case 4:
             ea->mode = EA_IMM;
+            ea->ext = c->pc;
             if (size == 1) ea->value = next16(c) & 0xFF;
             else if (size == 2) ea->value = next16(c);
             else ea->value = next32(c);

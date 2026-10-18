@@ -43,6 +43,10 @@ P ROMs over 2 MB are banked: put the fixed 1 MB at `0` and the banks after it, a
 
 Two optional fields pick the system. `.bios` names the default system ROM (otherwise `sp-s2.sp1`), and `.aes = 1` runs the board as an AES console: no backup RAM or coin slots, and the cart's S and M1 ROMs always serve. Use AES only when the cart needs it. The generator recompiles the default system ROM, so a player run with a different `--bios` runs that BIOS's code through the wrong table.
 
+### Game options that change the program
+
+Some options only make sense for one game, such as widescreen, which needs the game to draw more than 320 pixels. A game can change its P ROM at load time with `.patch`, which gets the loaded program and the output width. Patches that change immediate operands (a count, a bound) must list those words in `.live_words`: recompiled code reads them from memory instead of baking them in, so the same build runs patched or not, and `--verify` still checks it. Only immediates can be live, so a patch can't change control flow or instruction lengths; the generator warns about a live word that no recompiled instruction uses as an immediate. KOF98's `src/game.c` is the example.
+
 ## 3. Run it interpreted first
 
 Build without `YOURGAME_ROM_DIR` (or run with `--interp`) and play headless:
