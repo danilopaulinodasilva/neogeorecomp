@@ -21,3 +21,8 @@ reproduced in its directory:
   Sean Barrett. Public domain (or MIT, at your option).
   https://github.com/nothings/stb
   Its zlib decoder reads the indexed PNGs games load as art of their own.
+
+- ymfm (ext/ymfm) - Yamaha FM sound chip emulator
+  Copyright (c) 2021 Aaron Giles. BSD 3-Clause License.
+  https://github.com/aaronsgiles/ymfm
+  Synthesizes the YM2610: FM, SSG and ADPCM-A/B.
