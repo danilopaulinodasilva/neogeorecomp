@@ -67,7 +67,7 @@ add_library(ymfm STATIC
     ${NG_EXT}/ymfm/src/ymfm_adpcm.cpp
     ${NG_EXT}/ymfm/src/ymfm_ssg.cpp
     ${NG_EXT}/ymfm/src/ymfm_misc.cpp)
-target_include_directories(ymfm PUBLIC ${NG_EXT}/ymfm/src)
+target_include_directories(ymfm SYSTEM PUBLIC ${NG_EXT}/ymfm/src)
 
 # ---- runtime ----
 # SDL2 provides the window; without it the runtime builds headless-only.
