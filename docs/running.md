@@ -45,7 +45,9 @@ Frame numbers count 59.19 Hz video frames from power-on. The MVS BIOS eyecatcher
 
 ## Windowed play
 
-Keys: arrows; **Z X C V** = A B C D; **5** = coin; **1** = start (P1); **2** = start (P2); **3** = select; **9** = service; **F2** = test switch; **Esc** = quit. `--mute` turns the sound off; `--wav FILE` writes it to a file, also headless.
+Keys: player 1 arrows and **Z X C V** = A B C D, **1** = start, **3** = select; player 2 **R F D G** and **A S Q W** = A B C D, **2** = start, **4** = select (MAME's layout); **5** / **6** = coin 1 / 2; **9** = service; **F2** = test switch; **Esc** = quit.
+
+Gamepads work too, plugged in before or while playing: the first is player 1, the second player 2. The D-pad or left stick moves, the face buttons South, East, West and North (A, B, X, Y on an Xbox pad) are A, B, C and D, Start is start and Back is select. `--mute` turns the sound off; `--wav FILE` writes it to a file, also headless.
 
 On an MVS you insert a coin before Start does anything.
 

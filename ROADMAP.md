@@ -12,7 +12,7 @@
 - Protected and encrypted sets (CMC, PVC, SMA): they need decryption before the recompiler sees the code.
 - PAL timing and `TIMERSTOP`.
 - Flag liveness in the emitter, to drop dead flag computations (speed; correctness doesn't need it).
-- A frontend with settings, controller mapping and save states, in the style of lynxrecomp's. Toggling widescreen would need a restart, since patches apply at load.
+- A frontend with settings, remappable keys and buttons, and save states, in the style of lynxrecomp's. Toggling widescreen would need a restart, since patches apply at load.
 
 ## Out of scope
 
