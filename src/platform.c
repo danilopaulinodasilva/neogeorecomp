@@ -195,7 +195,7 @@ static int paeth(int a, int b, int c) {
     return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
 }
 
-uint8_t *ng_read_indexed_png(const char *path, int *w_out, int *h_out) {
+uint8_t *ng_read_indexed_png(const char *path, int *w_out, int *h_out, uint8_t rgb[768]) {
     FILE *f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "error: cannot open %s\n", path); return NULL; }
     fseek(f, 0, SEEK_END);
@@ -208,6 +208,7 @@ uint8_t *ng_read_indexed_png(const char *path, int *w_out, int *h_out) {
     uint8_t *idat = NULL, *out = NULL;
     size_t idat_n = 0;
     int w = 0, h = 0, depth = 0, ok = n >= 8 && !memcmp(file, sig, 8);
+    if (rgb) memset(rgb, 0, 768);
     for (size_t at = 8; ok && at + 12 <= n;) {
         uint32_t len = get32(file + at);
         const uint8_t *type = file + at + 4, *data = file + at + 8;
@@ -218,6 +219,8 @@ uint8_t *ng_read_indexed_png(const char *path, int *w_out, int *h_out) {
                 fprintf(stderr, "error: %s is not an indexed, non-interlaced PNG\n", path);
                 ok = 0;
             }
+        } else if (!memcmp(type, "PLTE", 4)) {
+            if (rgb) memcpy(rgb, data, len < 768 ? len : 768);
         } else if (!memcmp(type, "IDAT", 4)) {
             idat = (uint8_t *)realloc(idat, idat_n + len);
             memcpy(idat + idat_n, data, len);

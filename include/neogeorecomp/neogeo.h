@@ -97,8 +97,9 @@ enum {
 };
 
 /* Reads an indexed (palette) PNG: returns w*h colour indices, malloc'd,
- * or NULL with a message. For games that load art of their own. */
-uint8_t *ng_read_indexed_png(const char *path, int *w, int *h);
+ * or NULL with a message, and the file's palette in `rgb` (256 entries,
+ * unused ones black) if not NULL. For games that load art of their own. */
+uint8_t *ng_read_indexed_png(const char *path, int *w, int *h, uint8_t rgb[768]);
 
 int ng_main(int argc, char **argv, const ng_game_t *game,
             const ng_func_entry_t *funcs, size_t nfuncs);
