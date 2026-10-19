@@ -37,9 +37,9 @@ error: missing ROM files; see docs/running.md for the expected set
 
 ## Wider output
 
-`--width` adds equal margins left and right of the 320-pixel picture. They show what the hardware would draw just off screen: sprite X wraps at 512, so the left margin holds X values just below 512 and the right one those just above 320. The fix layer stays 320 wide in the middle, without its columns 0 and 39, which games blank to hide the CRT overscan. The sprites-per-line limit grows with the width (96 at 320).
+`--width` adds equal margins left and right of the 320-pixel picture. They show what the hardware would draw just off screen: sprite X wraps at 512, so the left margin holds X values just below 512 and the right one those just above 320. The fix layer stays 320 wide in the middle, without its columns 0 and 39, which games blank to hide the CRT overscan; a solid row at its edge (a band, not text) carries on into the margins. The sprites-per-line limit grows with the width (96 at 320).
 
-On its own this shows whatever the game left off screen, usually nothing, or objects parked out of view. A game repo can patch its program to draw more (`ng_game_t.patch`, docs/porting-a-game.md); KOF98's widescreen does that.
+On its own this shows whatever the game left off screen, usually nothing, or objects parked out of view. A game repo can patch its program to draw more (`ng_game_t.patch`, docs/porting-a-game.md), or fill the margins of screens drawn for 320 pixels with copies of their own columns (`ng_game_t.extend`); KOF98's widescreen does both.
 
 Frame numbers count 59.19 Hz video frames from power-on. The MVS BIOS eyecatcher finishes at about frame 600, and Metal Slug's title appears at about frame 1200.
 

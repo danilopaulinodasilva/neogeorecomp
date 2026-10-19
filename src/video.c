@@ -151,8 +151,67 @@ int ng_screen_w = NG_SCREEN_W;
  * just below 512 (sprite X wraps at 512). */
 static int screen_x(int x) { return (x + (ng_screen_w - NG_SCREEN_W) / 2) & 0x1FF; }
 
-static void draw_sprites(int scanline, uint32_t *row) {
+/* Sprite copies the game asked for this frame (ng_game_t.extend), grouped
+ * by the slot they copy: slot n's are s_extra[s_extra_at[n]..s_extra_at[n+1]). */
+#define MAX_EXTRA 256
+static int (*s_extend)(const uint16_t *, int, ng_extra_sprite_t *, int);
+static ng_extra_sprite_t s_extra[MAX_EXTRA];
+static int s_extra_at[382];
+
+void video_set_extend(int (*fn)(const uint16_t *, int, ng_extra_sprite_t *, int)) { s_extend = fn; }
+
+static void collect_extra(void) {
+    ng_extra_sprite_t got[MAX_EXTRA];
+    int n = s_extend ? s_extend(lspc_vram, ng_screen_w, got, MAX_EXTRA) : 0;
+    if (n > MAX_EXTRA) n = MAX_EXTRA;
+    int count[382] = {0};
+    for (int i = 0; i < n; i++) if (got[i].slot < 381) count[got[i].slot + 1]++;
+    s_extra_at[0] = 0;
+    for (int k = 1; k < 382; k++) s_extra_at[k] = s_extra_at[k - 1] + count[k];
+    int fill[381];
+    memcpy(fill, s_extra_at, sizeof fill);
+    for (int i = 0; i < n; i++) if (got[i].slot < 381) s_extra[fill[got[i].slot]++] = got[i];
+}
+
+/* One line of sprite n's tiles, at screen column sx. */
+static void draw_column(uint32_t *row, int n, int sx, int sprite_line, int rows, int zoom_y,
+                        int zoom_x, int flip) {
     const uint32_t *pens = s_pens[s_pal_bank];
+    int zoom_line = sprite_line & 0xFF;
+    int invert = sprite_line & 0x100;
+    if (invert) zoom_line ^= 0xFF;
+    if (rows > 0x20) {
+        /* Height 33+: the shrunk sprite repeats down the screen. */
+        zoom_line %= (zoom_y + 1) << 1;
+        if (zoom_line > zoom_y) {
+            zoom_line = ((zoom_y + 1) << 1) - 1 - zoom_line;
+            invert = !invert;
+        }
+    }
+    int yt = s_zoom_rom[(zoom_y << 8) | zoom_line];
+    int tile = yt >> 4, tile_row = yt & 0x0F;
+    if (invert) { tile_row ^= 0x0F; tile ^= 0x1F; }
+
+    uint32_t tm = (uint32_t)(n << 6) | (uint32_t)(tile << 1);
+    uint16_t attr = lspc_vram[tm + 1];
+    uint32_t code = lspc_vram[tm] | (((uint32_t)attr << 12) & 0xF0000u);
+    if (attr & 0x0008) code = (code & ~7u) | (lspc_anim_counter & 7);
+    else if (attr & 0x0004) code = (code & ~3u) | (lspc_anim_counter & 3);
+    if (attr & 0x0002) tile_row ^= 0x0F;
+
+    const uint8_t *gfx = s_spr + ((size_t)(code & s_spr_tiles_mask) << 8) + (tile_row << 4);
+    const uint32_t *pal = pens + ((attr >> 8) << 4);
+    const uint8_t *zx = s_zoom_x[zoom_x];
+    int px = sx;
+    for (int i = 0; i < 16; i++) {
+        if (!zx[i]) continue;
+        int c = ((attr ^ flip) & 1) ? gfx[15 - i] : gfx[i];
+        if (c && px < ng_screen_w) row[px] = pal[c];
+        px = (px + 1) & 0x1FF;
+    }
+}
+
+static void draw_sprites(int scanline, uint32_t *row) {
     int x = 0, y = 0, rows = 0, zoom_y = 0, zoom_x = 0, drawn = 0;
     /* The hardware draws 96 sprites per line. A wider screen needs more
      * columns of background, so the limit grows with it. */
@@ -173,41 +232,14 @@ static void draw_sprites(int scanline, uint32_t *row) {
         }
         if (rows == 0 || !on_line(scanline, y, rows)) continue;
         if (++drawn > max_per_line) break;
-        int sx = screen_x(x);
-        if (sx >= ng_screen_w && sx <= 0x1F0) continue;
-
         int sprite_line = (scanline - y) & 0x1FF;
-        int zoom_line = sprite_line & 0xFF;
-        int invert = sprite_line & 0x100;
-        if (invert) zoom_line ^= 0xFF;
-        if (rows > 0x20) {
-            /* Height 33+: the shrunk sprite repeats down the screen. */
-            zoom_line %= (zoom_y + 1) << 1;
-            if (zoom_line > zoom_y) {
-                zoom_line = ((zoom_y + 1) << 1) - 1 - zoom_line;
-                invert = !invert;
-            }
-        }
-        int yt = s_zoom_rom[(zoom_y << 8) | zoom_line];
-        int tile = yt >> 4, tile_row = yt & 0x0F;
-        if (invert) { tile_row ^= 0x0F; tile ^= 0x1F; }
-
-        uint32_t tm = (uint32_t)(n << 6) | (uint32_t)(tile << 1);
-        uint16_t attr = lspc_vram[tm + 1];
-        uint32_t code = lspc_vram[tm] | (((uint32_t)attr << 12) & 0xF0000u);
-        if (attr & 0x0008) code = (code & ~7u) | (lspc_anim_counter & 7);
-        else if (attr & 0x0004) code = (code & ~3u) | (lspc_anim_counter & 3);
-        if (attr & 0x0002) tile_row ^= 0x0F;
-
-        const uint8_t *gfx = s_spr + ((size_t)(code & s_spr_tiles_mask) << 8) + (tile_row << 4);
-        const uint32_t *pal = pens + ((attr >> 8) << 4);
-        const uint8_t *zx = s_zoom_x[zoom_x];
-        int px = sx;
-        for (int i = 0; i < 16; i++) {
-            if (!zx[i]) continue;
-            int c = (attr & 1) ? gfx[15 - i] : gfx[i];
-            if (c && px < ng_screen_w) row[px] = pal[c];
-            px = (px + 1) & 0x1FF;
+        int sx = screen_x(x);
+        if (sx < ng_screen_w || sx > 0x1F0)
+            draw_column(row, n, sx, sprite_line, rows, zoom_y, zoom_x, 0);
+        for (int e = s_extra_at[n]; e < s_extra_at[n + 1]; e++) {
+            int ex = screen_x(s_extra[e].x);
+            if (ex < ng_screen_w || ex > 0x1F0)
+                draw_column(row, n, ex, sprite_line, rows, zoom_y, zoom_x, s_extra[e].flip);
         }
     }
 }
@@ -229,12 +261,23 @@ static void draw_fix(int scanline, uint32_t *row) {
         const uint32_t *pal = pens + ((e >> 12) << 4);
         for (int i = 0; i < 8; i++)
             if (px[i]) row[col * 8 + i] = pal[px[i]];
+        /* A solid row at either edge (a band across the screen, not text)
+         * carries on through the hidden column and the margin. */
+        if ((col == first || col == last - 1) && first == 1) {
+            int solid = 1;
+            for (int i = 0; i < 8; i++) solid &= px[i] != 0;
+            if (!solid) continue;
+            int margin = (ng_screen_w - NG_SCREEN_W) / 2;
+            int from = col == first ? -margin : (col + 1) * 8, to = col == first ? col * 8 : NG_SCREEN_W + margin;
+            for (int x = from; x < to; x++) row[x] = pal[px[x & 7]];
+        }
     }
 }
 
 void video_render_line(int line, uint32_t *row) {
     int scanline = line + NG_FIRST_VISIBLE;
     uint32_t backdrop = s_pens[s_pal_bank][0xFFF];
+    if (line == 0) collect_extra();
     for (int i = 0; i < ng_screen_w; i++) row[i] = backdrop;
     draw_sprites(scanline, row);
     draw_fix(scanline, row);

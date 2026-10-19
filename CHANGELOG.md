@@ -8,6 +8,7 @@ The runtime is rebuilt as a generic model of the MVS board (#1). The previous ru
 
 ### Added
 - **Wider output**: `--width N` (320-496) and `--widescreen` (400) add margins showing what lies just off screen; the fix layer stays centred without its overscan columns, and the sprites-per-line limit grows with the width. Screenshots and `--record` follow the width.
+- **Margin fill**: `ng_game_t.extend` lets a game add copies of sprite columns, optionally mirrored, to fill the margins of screens drawn for 320 pixels. The renderer draws each copy right after its original, so priority holds; VRAM and emulation are untouched. With wider output, a solid row in the fix layer's edge columns (a band, not text) carries on into the margins.
 - **Game patches**: `ng_game_t.patch` changes the P ROM at load time given the output width, and `ng_game_t.live_words` lists patched immediates, which recompiled code reads from memory (with `bus_peek16`, so `--verify` stays exact).
 - **Multi-bank P ROMs** (up to 8 banks of 1 MB): the recompiler analyses each bank behind `$200000` in its own context, entries for banks other than 0 carry the bank in bits 24-31, and the runtime dispatches through one table per bank, picked by the mapped bank. `--dump-misses` records the bank. KOF98 (5 MB) verifies with 0 mismatches.
 - **AES mode** (`ng_game_t.aes`) and a default system ROM per game (`ng_game_t.bios`), used by both the player and the generator. On an AES the fix layer and the Z80 always use the cartridge's S and M1 ROMs.

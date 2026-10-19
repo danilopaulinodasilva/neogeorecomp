@@ -244,6 +244,7 @@ int ng_main(int argc, char **argv, const ng_game_t *game,
     bus_init(&board);
     io_reset(s_mvs);
     video_load(crom, game->crom_size, srom, srom_sz, sfix, lo);
+    if (ng_screen_w > NG_SCREEN_W) video_set_extend(game->extend);
     free(crom);
     audio_init(m1, m1_sz, sm1, vroms, vsizes, nv);
     exec_init(funcs, nfuncs, o.interp || nfuncs == 0);

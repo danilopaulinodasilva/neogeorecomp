@@ -62,6 +62,7 @@ int  video_load(const uint8_t *crom, size_t crom_size, const uint8_t *srom, size
                 const uint8_t *sfix, const uint8_t *zoom_rom);
 void video_set_fix_bios(int bios);       /* 1 = BIOS SFIX, 0 = cart S ROM */
 void video_render_line(int line, uint32_t *row);   /* line 0..223 */
+void video_set_extend(int (*fn)(const uint16_t *, int, ng_extra_sprite_t *, int));
 void video_shutdown(void);
 
 /* ---- I/O ports, system latch, RTC (io.c) ---- */

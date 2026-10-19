@@ -18,6 +18,15 @@ extern "C" {
 
 typedef void (*ng_func_t)(void);
 
+/* A copy of sprite `slot` at hardware X `x` (0-511), mirrored when `flip`
+ * is set. It is drawn right after the original, so it keeps its place in
+ * the sprite order. */
+typedef struct {
+    uint16_t slot;
+    uint16_t x;
+    uint8_t  flip;
+} ng_extra_sprite_t;
+
 /* One recompiled entry point: the 68k address control can arrive at, and
  * the routine that continues from there. */
 typedef struct {
@@ -59,6 +68,12 @@ typedef struct {
      * uses one as an immediate operand reads it from memory instead of
      * baking it in, so it sees the patched value. */
     const uint32_t *live_words;
+    /* Optional, for output wider than 320: called before each frame is
+     * drawn, with sprite VRAM (SCB1 at 0, SCB2-4 at $8000-$8400). It writes
+     * up to `max` sprite copies to `out` and returns how many, so a game
+     * can fill the margins of screens drawn for 320 pixels from its own
+     * graphics. Copies change only the picture, never VRAM. */
+    int (*extend)(const uint16_t *vram, int screen_w, ng_extra_sprite_t *out, int max);
 } ng_game_t;
 
 /* Controller state for one frame. Bits are active-high here; io.c inverts. */
