@@ -7,6 +7,7 @@ All notable changes to this project. Format: [Keep a Changelog](https://keepacha
 The runtime is rebuilt as a generic model of the MVS board (#1). The previous runtime (v0.1.0) was shaped around Neo Drift Out with title-specific patches; nothing from it survives except the name.
 
 ### Added
+- **Pause menu** in the window (Esc, or a gamepad's Guide button): volume, fullscreen, scanlines, 4:3 or 16:9 for the next start, remappable keys for both players, reset and quit, saved per game in SDL's per-user folder. Headless runs never read the settings. Text uses the public-domain font8x8 (ext/font8x8).
 - **Player 2 and gamepads** in the window: player 2 on R F D G and A S Q W (MAME's layout), 2 and 4; up to two SDL game controllers, hot-plugged, the first for player 1.
 - **Sound**: YM2610 synthesis (FM, SSG, ADPCM-A/B from the V ROMs) through [ymfm](https://github.com/aaronsgiles/ymfm) (BSD-3, ext/ymfm). Samples are generated up to the Z80's clock before each register write, at the chip's rate (8 MHz / 144); the window plays them through SDL2, `--wav FILE` writes them, `--mute` silences the window. The YM2610 timers and IRQ stay modelled in `audio.c`.
 - **Wider output**: `--width N` (320-496) and `--widescreen` (400) add margins showing what lies just off screen; the fix layer stays centred without its overscan columns, and the sprites-per-line limit grows with the width. Screenshots and `--record` follow the width.

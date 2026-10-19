@@ -26,3 +26,8 @@ reproduced in its directory:
   Copyright (c) 2021 Aaron Giles. BSD 3-Clause License.
   https://github.com/aaronsgiles/ymfm
   Synthesizes the YM2610: FM, SSG and ADPCM-A/B.
+
+- font8x8 (ext/font8x8/font8x8_basic.h) - 8x8 bitmap font
+  Daniel Hepper, after Marcel Sondaar and IBM's VGA fonts. Public domain.
+  https://github.com/dhepper/font8x8
+  The pause menu's text.

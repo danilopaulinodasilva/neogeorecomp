@@ -108,6 +108,8 @@ int  write_png(const char *path, const uint32_t *argb, int w, int h);
 int  window_open(const char *title, int scale);
 bool window_frame(const uint32_t *fb, ng_input_t *in);   /* false = quit */
 void window_audio(const int16_t *samples, size_t frames);
+int  window_settings_load(const char *game);   /* the saved output width, or 0 */
+int  window_take_reset(void);                  /* the player chose Reset in the menu */
 void window_close(void);
 
 #endif

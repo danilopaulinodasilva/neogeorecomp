@@ -75,6 +75,8 @@ int  window_open(const char *title, int scale) {
 }
 bool window_frame(const uint32_t *fb, ng_input_t *in) { (void)fb; (void)in; return true; }
 void window_audio(const int16_t *samples, size_t frames) { (void)samples; (void)frames; }
+int  window_settings_load(const char *game) { (void)game; return 0; }
+int  window_take_reset(void) { return 0; }
 void window_close(void) {}
 #endif
 

@@ -25,7 +25,7 @@ static uint32_t s_fb[NG_MAX_SCREEN_W * NG_SCREEN_H];
 #define MAX_SHOTS 64
 typedef struct {
     const char *rom_path, *bios_path, *record, *input, *dump_misses, *bios_name, *wav;
-    int headless, interp, verify, scale, mute;
+    int headless, interp, verify, scale, mute, width_set;
     long frames;
     struct { long frame; const char *path; } shots[MAX_SHOTS];
     int nshots;
@@ -69,8 +69,8 @@ static int parse_args(int argc, char **argv, options_t *o) {
         else if (!strcmp(a, "--verify")) o->verify = 1;
         else if (!strcmp(a, "--dump-misses") && next) { o->dump_misses = next; i++; }
         else if (!strcmp(a, "--scale") && next) { o->scale = atoi(next); i++; }
-        else if (!strcmp(a, "--width") && next) { ng_screen_w = atoi(next); i++; }
-        else if (!strcmp(a, "--widescreen")) ng_screen_w = 400;
+        else if (!strcmp(a, "--width") && next) { ng_screen_w = atoi(next); o->width_set = 1; i++; }
+        else if (!strcmp(a, "--widescreen")) { ng_screen_w = 400; o->width_set = 1; }
         else if (!strcmp(a, "--wav") && next) { o->wav = next; i++; }
         else if (!strcmp(a, "--mute")) o->mute = 1;
         else if (!strcmp(a, "--screenshot") && next) {
@@ -214,6 +214,12 @@ int ng_main(int argc, char **argv, const ng_game_t *game,
     platform_early_init();
     if (parse_args(argc, argv, &o)) return 2;
     if (o.input && load_script(o.input)) return 1;
+    /* The window's saved settings; the command line wins. Headless runs
+     * never read them, so they behave the same everywhere. */
+    if (!o.headless) {
+        int w = window_settings_load(game->name);
+        if (!o.width_set && w >= NG_SCREEN_W && w <= NG_MAX_SCREEN_W && !(w & 1)) ng_screen_w = w;
+    }
     if (!o.bios_name) o.bios_name = game->bios ? game->bios : "sp-s2.sp1";
 
     size_t sz, bios_sz, sfix_sz, sm1_sz, lo_sz, srom_sz, m1_sz;
@@ -266,6 +272,7 @@ int ng_main(int argc, char **argv, const ng_game_t *game,
         ng_input_t in;
         memset(&in, 0, sizeof(in));
         if (!platform_frame(frame == 0 ? NULL : s_fb, &in)) break;
+        if (window_take_reset()) power_on();
         script_input(frame, &in);
         io_set_inputs(&in);
         run_frame();
