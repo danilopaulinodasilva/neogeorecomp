@@ -76,7 +76,7 @@ add_library(neogeorecomp STATIC
     src/romload.c)
 target_include_directories(neogeorecomp
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${NG_EXT}/stb)
 target_link_libraries(neogeorecomp PUBLIC musashi z80core)
 if(TARGET SDL2::SDL2)
     # Visible to the game's CMakeLists too, so it can ship the DLL.

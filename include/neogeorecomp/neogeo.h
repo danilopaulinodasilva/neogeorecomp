@@ -20,11 +20,19 @@ typedef void (*ng_func_t)(void);
 
 /* A copy of sprite `slot` at hardware X `x` (0-511), mirrored when `flip`
  * is set. It is drawn right after the original, so it keeps its place in
- * the sprite order. */
+ * the sprite order, and takes its position, height and shrink. A non-zero
+ * `colour` draws every opaque pixel in that colour of the sprite's palette.
+ * With `art`, the copy shows other pixels instead of the sprite's tiles:
+ * 16 colour indices per line of the sprite (512 lines), in palette `pal`.
+ * So a game can fill margins with art of its own, still faded and
+ * recoloured by palette RAM. */
 typedef struct {
     uint16_t slot;
     uint16_t x;
     uint8_t  flip;
+    uint8_t  colour;
+    uint16_t pal;
+    const uint8_t *art;
 } ng_extra_sprite_t;
 
 /* One recompiled entry point: the 68k address control can arrive at, and
@@ -87,6 +95,10 @@ enum {
     NG_UP = 0x01, NG_DOWN = 0x02, NG_LEFT = 0x04, NG_RIGHT = 0x08,
     NG_A = 0x10, NG_B = 0x20, NG_C = 0x40, NG_D = 0x80
 };
+
+/* Reads an indexed (palette) PNG: returns w*h colour indices, malloc'd,
+ * or NULL with a message. For games that load art of their own. */
+uint8_t *ng_read_indexed_png(const char *path, int *w, int *h);
 
 int ng_main(int argc, char **argv, const ng_game_t *game,
             const ng_func_entry_t *funcs, size_t nfuncs);

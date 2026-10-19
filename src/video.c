@@ -173,39 +173,48 @@ static void collect_extra(void) {
     for (int i = 0; i < n; i++) if (got[i].slot < 381) s_extra[fill[got[i].slot]++] = got[i];
 }
 
-/* One line of sprite n's tiles, at screen column sx. */
+/* One line of sprite n, at screen column sx: its tiles, or a copy's art. */
 static void draw_column(uint32_t *row, int n, int sx, int sprite_line, int rows, int zoom_y,
-                        int zoom_x, int flip) {
+                        int zoom_x, const ng_extra_sprite_t *copy) {
     const uint32_t *pens = s_pens[s_pal_bank];
-    int zoom_line = sprite_line & 0xFF;
-    int invert = sprite_line & 0x100;
-    if (invert) zoom_line ^= 0xFF;
-    if (rows > 0x20) {
-        /* Height 33+: the shrunk sprite repeats down the screen. */
-        zoom_line %= (zoom_y + 1) << 1;
-        if (zoom_line > zoom_y) {
-            zoom_line = ((zoom_y + 1) << 1) - 1 - zoom_line;
-            invert = !invert;
-        }
-    }
-    int yt = s_zoom_rom[(zoom_y << 8) | zoom_line];
-    int tile = yt >> 4, tile_row = yt & 0x0F;
-    if (invert) { tile_row ^= 0x0F; tile ^= 0x1F; }
-
-    uint32_t tm = (uint32_t)(n << 6) | (uint32_t)(tile << 1);
-    uint16_t attr = lspc_vram[tm + 1];
-    uint32_t code = lspc_vram[tm] | (((uint32_t)attr << 12) & 0xF0000u);
-    if (attr & 0x0008) code = (code & ~7u) | (lspc_anim_counter & 7);
-    else if (attr & 0x0004) code = (code & ~3u) | (lspc_anim_counter & 3);
-    if (attr & 0x0002) tile_row ^= 0x0F;
-
-    const uint8_t *gfx = s_spr + ((size_t)(code & s_spr_tiles_mask) << 8) + (tile_row << 4);
-    const uint32_t *pal = pens + ((attr >> 8) << 4);
     const uint8_t *zx = s_zoom_x[zoom_x];
+    int flip = copy ? copy->flip : 0, colour = copy ? copy->colour : 0;
+    const uint8_t *gfx;
+    const uint32_t *pal;
+    uint16_t attr = 0;
+    if (copy && copy->art) {
+        gfx = copy->art + (sprite_line & 0x1FF) * 16;
+        pal = pens + ((copy->pal & 0xFF) << 4);
+    } else {
+        int zoom_line = sprite_line & 0xFF;
+        int invert = sprite_line & 0x100;
+        if (invert) zoom_line ^= 0xFF;
+        if (rows > 0x20) {
+            /* Height 33+: the shrunk sprite repeats down the screen. */
+            zoom_line %= (zoom_y + 1) << 1;
+            if (zoom_line > zoom_y) {
+                zoom_line = ((zoom_y + 1) << 1) - 1 - zoom_line;
+                invert = !invert;
+            }
+        }
+        int yt = s_zoom_rom[(zoom_y << 8) | zoom_line];
+        int tile = yt >> 4, tile_row = yt & 0x0F;
+        if (invert) { tile_row ^= 0x0F; tile ^= 0x1F; }
+
+        uint32_t tm = (uint32_t)(n << 6) | (uint32_t)(tile << 1);
+        attr = lspc_vram[tm + 1];
+        uint32_t code = lspc_vram[tm] | (((uint32_t)attr << 12) & 0xF0000u);
+        if (attr & 0x0008) code = (code & ~7u) | (lspc_anim_counter & 7);
+        else if (attr & 0x0004) code = (code & ~3u) | (lspc_anim_counter & 3);
+        if (attr & 0x0002) tile_row ^= 0x0F;
+        gfx = s_spr + ((size_t)(code & s_spr_tiles_mask) << 8) + (tile_row << 4);
+        pal = pens + ((attr >> 8) << 4);
+    }
     int px = sx;
     for (int i = 0; i < 16; i++) {
         if (!zx[i]) continue;
         int c = ((attr ^ flip) & 1) ? gfx[15 - i] : gfx[i];
+        if (c && colour) c = colour;
         if (c && px < ng_screen_w) row[px] = pal[c];
         px = (px + 1) & 0x1FF;
     }
@@ -235,11 +244,11 @@ static void draw_sprites(int scanline, uint32_t *row) {
         int sprite_line = (scanline - y) & 0x1FF;
         int sx = screen_x(x);
         if (sx < ng_screen_w || sx > 0x1F0)
-            draw_column(row, n, sx, sprite_line, rows, zoom_y, zoom_x, 0);
+            draw_column(row, n, sx, sprite_line, rows, zoom_y, zoom_x, NULL);
         for (int e = s_extra_at[n]; e < s_extra_at[n + 1]; e++) {
             int ex = screen_x(s_extra[e].x);
             if (ex < ng_screen_w || ex > 0x1F0)
-                draw_column(row, n, ex, sprite_line, rows, zoom_y, zoom_x, s_extra[e].flip);
+                draw_column(row, n, ex, sprite_line, rows, zoom_y, zoom_x, &s_extra[e]);
         }
     }
 }
