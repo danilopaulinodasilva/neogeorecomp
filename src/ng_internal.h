@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <neogeorecomp/neogeo.h>
 
 #define NG_CLOCKS_PER_LINE   768
@@ -49,6 +50,8 @@ void     lspc_write(uint32_t addr, uint16_t v);
 void     lspc_vblank(void);              /* IRQ1 time: auto-anim + timer autoload */
 int64_t  lspc_timer_deadline(void);
 void     lspc_timer_fire(void);
+int      lspc_state_save(FILE *f);
+int      lspc_state_load(FILE *f);
 extern uint16_t lspc_vram[0x10000];
 extern uint8_t  lspc_anim_counter;
 
@@ -56,6 +59,8 @@ extern uint8_t  lspc_anim_counter;
 uint16_t pal_read(uint32_t addr);
 void     pal_write(uint32_t addr, uint16_t v);
 void     pal_select_bank(int bank);
+int      pal_state_save(FILE *f);
+int      pal_state_load(FILE *f);
 
 /* ---- renderer (video.c) ---- */
 int  video_load(const uint8_t *crom, size_t crom_size, const uint8_t *srom, size_t srom_size,
@@ -82,6 +87,8 @@ void    audio_select_bios_rom(int bios); /* SM1 vs cart M1 */
 size_t  audio_take_samples(int16_t *out, size_t max_frames);  /* stereo, NG_AUDIO_RATE */
 #define NG_AUDIO_RATE 55555                  /* the YM2610's: 8 MHz / 144 */
 void    audio_shutdown(void);
+int     audio_state_save(FILE *f);
+int     audio_state_load(FILE *f);
 
 /* ---- execution engine (exec.c) ---- */
 void exec_init(const ng_func_entry_t *funcs, size_t nfuncs, int interp_only);
@@ -111,5 +118,20 @@ void window_audio(const int16_t *samples, size_t frames);
 int  window_settings_load(const char *game);   /* the saved output width, or 0 */
 int  window_take_reset(void);                  /* the player chose Reset in the menu */
 void window_close(void);
+
+/* ---- bus snapshot (bus.c): work RAM, backup RAM, bank, locks ---- */
+int bus_state_save(FILE *f);
+int bus_state_load(FILE *f);
+
+/* ---- Debug page and the one save slot (neogeo.c) ----
+ * The page lists the game's ng_debug_item_t lines, then Save slot and
+ * Load slot. Scripts use the same words, plus save and load. */
+int         ng_debug_count(void);
+void        ng_debug_label(int index, char *buf, size_t n);
+int         ng_debug_adjustable(int index);
+void        ng_debug_action(int index, int dir);   /* -1 left, +1 right, 0 confirm */
+const char *ng_debug_status(void);
+int         ng_state_save(void);
+int         ng_state_load(void);
 
 #endif

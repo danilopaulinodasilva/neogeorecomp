@@ -24,6 +24,7 @@
 #include "z80.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 static z80 s_z;
 static const uint8_t *s_m1, *s_sm1;
@@ -260,6 +261,63 @@ size_t audio_take_samples(int16_t *out, size_t max_frames) {
     }
     s_ring_count -= n;
     return n;
+}
+
+/* The YM2610 chip itself has no snapshot. Resetting it and writing the
+ * register mirror back leaves the music a note off until the driver writes
+ * again, which is enough for a picture. The Z80's callbacks stay the live
+ * ones: the file holds the registers, not function pointers. */
+static void ym_replay(void) {
+    ym2610_reset();
+    for (int part = 0; part < 2; part++)
+        for (int r = 0; r < 256; r++) {
+            ym2610_write(part * 2, (uint8_t)r);
+            ym2610_write(part * 2 + 1, s_ym.regs[part][r]);
+        }
+}
+
+int audio_state_save(FILE *f) {
+    z80 z = s_z;
+    int32_t flags[4];
+    uint8_t cr[2];
+    z.read_byte = NULL; z.write_byte = NULL; z.port_in = NULL; z.port_out = NULL; z.userdata = NULL;
+    flags[0] = s_use_bios_rom; flags[1] = s_nmi_enabled; flags[2] = s_nmi_pending; flags[3] = s_nmi_line;
+    cr[0] = s_cmd; cr[1] = s_reply;
+    if (fwrite(&z, sizeof(z), 1, f) != 1) return -1;
+    if (fwrite(s_ram, 1, sizeof(s_ram), f) != sizeof(s_ram)) return -1;
+    if (fwrite(s_bank, sizeof(s_bank), 1, f) != 1) return -1;
+    if (fwrite(flags, sizeof(flags), 1, f) != 1) return -1;
+    if (fwrite(cr, 1, 2, f) != 2) return -1;
+    if (fwrite(&s_z80_clock, sizeof(s_z80_clock), 1, f) != 1) return -1;
+    if (fwrite(&s_samples_done, sizeof(s_samples_done), 1, f) != 1) return -1;
+    return fwrite(&s_ym, sizeof(s_ym), 1, f) == 1 ? 0 : -1;
+}
+
+int audio_state_load(FILE *f) {
+    z80 z;
+    int32_t flags[4];
+    uint8_t cr[2];
+    uint8_t (*read_byte)(void *, uint16_t) = s_z.read_byte;
+    void (*write_byte)(void *, uint16_t, uint8_t) = s_z.write_byte;
+    uint8_t (*port_in)(z80 *, uint8_t) = s_z.port_in;
+    void (*port_out)(z80 *, uint8_t, uint8_t) = s_z.port_out;
+    void *userdata = s_z.userdata;
+    if (fread(&z, sizeof(z), 1, f) != 1) return -1;
+    if (fread(s_ram, 1, sizeof(s_ram), f) != sizeof(s_ram)) return -1;
+    if (fread(s_bank, sizeof(s_bank), 1, f) != 1) return -1;
+    if (fread(flags, sizeof(flags), 1, f) != 1) return -1;
+    if (fread(cr, 1, 2, f) != 2) return -1;
+    if (fread(&s_z80_clock, sizeof(s_z80_clock), 1, f) != 1) return -1;
+    if (fread(&s_samples_done, sizeof(s_samples_done), 1, f) != 1) return -1;
+    if (fread(&s_ym, sizeof(s_ym), 1, f) != 1) return -1;
+    s_z = z;
+    s_z.read_byte = read_byte; s_z.write_byte = write_byte;
+    s_z.port_in = port_in; s_z.port_out = port_out; s_z.userdata = userdata;
+    s_use_bios_rom = flags[0]; s_nmi_enabled = flags[1]; s_nmi_pending = flags[2]; s_nmi_line = flags[3];
+    s_cmd = cr[0]; s_reply = cr[1];
+    s_ring_head = 0; s_ring_count = 0;
+    ym_replay();
+    return 0;
 }
 
 void audio_shutdown(void) {}

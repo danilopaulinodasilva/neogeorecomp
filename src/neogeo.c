@@ -8,9 +8,12 @@
  *
  * Input comes from the window, or from an --input script so headless runs
  * are reproducible: `<frame>[-<end>] <button>[+<button>...]`, one per line.
+ * A word that is not a button is a debug command (`save`, `load`, or one
+ * of the game's ng_debug_item_t tokens) and runs once, on that frame.
  */
 #include "ng_internal.h"
 #include <neogeorecomp/bus.h>
+#include <neogeorecomp/cpu.h>
 #include "romload.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +22,8 @@
 int64_t ng_frame_start;
 
 static uint32_t s_fb[NG_MAX_SCREEN_W * NG_SCREEN_H];
+static const ng_game_t *s_game;
+static char s_status[48];
 
 /* ---- options ---- */
 
@@ -98,6 +103,78 @@ typedef struct { long start, end; ng_input_t in; } script_ev_t;
 static script_ev_t *s_script;
 static int s_nscript;
 
+typedef struct { long frame; char cmd[64]; } dbg_ev_t;
+static dbg_ev_t *s_dbg;
+static int s_ndbg;
+
+static const char *slot_path(void) {
+    static char path[64];
+    snprintf(path, sizeof(path), "%s.slot", s_game && s_game->name ? s_game->name : "neogeo");
+    return path;
+}
+
+static int debug_nitems(void) {
+    int n = 0;
+    if (s_game && s_game->debug)
+        for (const ng_debug_item_t *d = s_game->debug; d->token; d++) n++;
+    return n;
+}
+
+static const ng_debug_item_t *debug_item(int index) {
+    if (!s_game || !s_game->debug || index < 0) return NULL;
+    const ng_debug_item_t *d = s_game->debug;
+    for (int i = 0; d->token && i < index; i++) d++;
+    return d->token ? d : NULL;
+}
+
+static void debug_apply(const ng_debug_item_t *d, int has, int value) {
+    if (!d->set) return;
+    if (d->max < d->min) { d->set(0); return; }
+    if (!has) value = (d->min == 0 && d->max == 1) ? 1 : (d->get ? d->get() : d->min);
+    if (value < d->min) value = d->min;
+    if (value > d->max) value = d->max;
+    d->set(value);
+}
+
+static void debug_run(const char *cmd) {
+    char name[64];
+    const ng_debug_item_t *d;
+    char *eq;
+    if (!strcmp(cmd, "save")) { ng_state_save(); return; }
+    if (!strcmp(cmd, "load")) { ng_state_load(); return; }
+    snprintf(name, sizeof(name), "%s", cmd);
+    eq = strchr(name, '=');
+    if (eq) *eq = 0;
+    if (!s_game || !s_game->debug) return;
+    for (d = s_game->debug; d->token; d++)
+        if (!strcmp(d->token, name)) { debug_apply(d, eq != NULL, eq ? atoi(eq + 1) : 0); return; }
+}
+
+/* A script word the Debug page understands. Stored for the frame it names;
+ * a range still fires once, at its first frame. */
+static int debug_accept(long frame, const char *tok) {
+    char name[64];
+    char *eq;
+    dbg_ev_t *grown;
+    const ng_debug_item_t *d;
+    if (strcmp(tok, "save") && strcmp(tok, "load")) {
+        if (!s_game || !s_game->debug) return 0;
+        snprintf(name, sizeof(name), "%s", tok);
+        eq = strchr(name, '=');
+        if (eq) *eq = 0;
+        for (d = s_game->debug; d->token; d++)
+            if (!strcmp(d->token, name)) break;
+        if (!d->token) return 0;
+    }
+    grown = (dbg_ev_t *)realloc(s_dbg, (size_t)(s_ndbg + 1) * sizeof(*s_dbg));
+    if (!grown) return 0;
+    s_dbg = grown;
+    s_dbg[s_ndbg].frame = frame;
+    snprintf(s_dbg[s_ndbg].cmd, sizeof(s_dbg[s_ndbg].cmd), "%s", tok);
+    s_ndbg++;
+    return 1;
+}
+
 static int button(const char *name, ng_input_t *in) {
     static const struct { const char *n; int kind; uint8_t bit; } map[] = {
         {"up", 1, NG_UP}, {"down", 1, NG_DOWN}, {"left", 1, NG_LEFT}, {"right", 1, NG_RIGHT},
@@ -141,6 +218,7 @@ static int load_script(const char *path) {
             if (sscanf(line, "%ld %199s", &start, buttons) != 2) continue;
             end = start + 5;   /* long enough for the BIOS to debounce a press */
         }
+        if (!strchr(buttons, '+') && debug_accept(start, buttons)) continue;
         script_ev_t ev = {start, end, {0}};
         for (char *tok = strtok(buttons, "+"); tok; tok = strtok(NULL, "+"))
             if (button(tok, &ev.in)) {
@@ -195,6 +273,107 @@ static void run_frame(void) {
 
 static int s_mvs = 1;
 
+/* One slot, named after the game, in the current directory. The width is
+ * checked before anything is replaced: widescreen is patched into the ROM
+ * at load, so a 16:9 picture cannot be restored into a 4:3 run. */
+int ng_state_save(void) {
+    FILE *f = fopen(slot_path(), "wb");
+    int32_t w = ng_screen_w, h = NG_SCREEN_H;
+    int ok;
+    if (!f) { snprintf(s_status, sizeof(s_status), "cannot save"); return -1; }
+    ok = fwrite("NGSTATE1", 1, 8, f) == 8
+      && fwrite(&w, 4, 1, f) == 1
+      && fwrite(&h, 4, 1, f) == 1
+      && fwrite(&ng_cpu, sizeof(ng_cpu), 1, f) == 1
+      && fwrite(&ng_cycles, sizeof(ng_cycles), 1, f) == 1
+      && fwrite(&ng_frame_start, sizeof(ng_frame_start), 1, f) == 1
+      && fwrite(&ng_irq_pending, 1, 1, f) == 1
+      && bus_state_save(f) == 0
+      && pal_state_save(f) == 0
+      && lspc_state_save(f) == 0
+      && audio_state_save(f) == 0;
+    fclose(f);
+    if (!ok) { snprintf(s_status, sizeof(s_status), "cannot save"); return -1; }
+    snprintf(s_status, sizeof(s_status), "saved");
+    fprintf(stderr, "[neogeorecomp] saved %s (%d wide)\n", slot_path(), ng_screen_w);
+    return 0;
+}
+
+int ng_state_load(void) {
+    FILE *f = fopen(slot_path(), "rb");
+    char magic[8];
+    int32_t w = 0, h = 0;
+    if (!f) { snprintf(s_status, sizeof(s_status), "no save"); return -1; }
+    if (fread(magic, 1, 8, f) != 8 || memcmp(magic, "NGSTATE1", 8) ||
+        fread(&w, 4, 1, f) != 1 || fread(&h, 4, 1, f) != 1) {
+        fclose(f);
+        snprintf(s_status, sizeof(s_status), "bad save");
+        return -1;
+    }
+    if (w != ng_screen_w || h != NG_SCREEN_H) {
+        fclose(f);
+        snprintf(s_status, sizeof(s_status), "width differs");
+        fprintf(stderr, "[neogeorecomp] save is %d wide and this run is %d; not loaded\n", w, ng_screen_w);
+        return -2;
+    }
+    if (fread(&ng_cpu, sizeof(ng_cpu), 1, f) != 1 ||
+        fread(&ng_cycles, sizeof(ng_cycles), 1, f) != 1 ||
+        fread(&ng_frame_start, sizeof(ng_frame_start), 1, f) != 1 ||
+        fread(&ng_irq_pending, 1, 1, f) != 1 ||
+        bus_state_load(f) || pal_state_load(f) || lspc_state_load(f) || audio_state_load(f)) {
+        fclose(f);
+        snprintf(s_status, sizeof(s_status), "bad save");
+        return -1;
+    }
+    fclose(f);
+    snprintf(s_status, sizeof(s_status), "loaded");
+    fprintf(stderr, "[neogeorecomp] loaded %s\n", slot_path());
+    return 0;
+}
+
+int ng_debug_count(void) { return debug_nitems() + 2; }
+
+void ng_debug_label(int index, char *buf, size_t n) {
+    const ng_debug_item_t *d = debug_item(index);
+    int v;
+    if (!d) {
+        snprintf(buf, n, "%s", index == debug_nitems() ? "Save slot" : "Load slot");
+        return;
+    }
+    if (d->max < d->min) { snprintf(buf, n, "%s", d->label); return; }
+    v = d->get ? d->get() : d->min;
+    if (d->min == 0 && d->max == 1)
+        snprintf(buf, n, "%-12s < %s >", d->label, v ? "on " : "off");
+    else
+        snprintf(buf, n, "%-12s < %d >", d->label, v);
+}
+
+int ng_debug_adjustable(int index) {
+    const ng_debug_item_t *d = debug_item(index);
+    return d && d->max >= d->min;
+}
+
+void ng_debug_action(int index, int dir) {
+    const ng_debug_item_t *d;
+    int v;
+    if (index == debug_nitems()) { ng_state_save(); return; }
+    if (index == debug_nitems() + 1) { ng_state_load(); return; }
+    d = debug_item(index);
+    if (!d) return;
+    if (d->max < d->min) { if (dir == 0) debug_apply(d, 0, 0); return; }
+    v = d->get ? d->get() : d->min;
+    if (dir == 0) {
+        if (d->min == 0 && d->max == 1) debug_apply(d, 1, !v);
+        return;
+    }
+    v += dir;
+    if (v < d->min) v = d->min;
+    if (v > d->max) v = d->max;
+    debug_apply(d, 1, v);
+}
+
+const char *ng_debug_status(void) { return s_status; }
+
 static void power_on(void) {
     ng_cycles = 0;
     ng_frame_start = 0;
@@ -211,6 +390,7 @@ static void power_on(void) {
 int ng_main(int argc, char **argv, const ng_game_t *game,
             const ng_func_entry_t *funcs, size_t nfuncs) {
     options_t o;
+    s_game = game;
     platform_early_init();
     if (parse_args(argc, argv, &o)) return 2;
     if (o.input && load_script(o.input)) return 1;
@@ -274,6 +454,9 @@ int ng_main(int argc, char **argv, const ng_game_t *game,
         if (!platform_frame(frame == 0 ? NULL : s_fb, &in)) break;
         if (window_take_reset()) power_on();
         script_input(frame, &in);
+        for (int i = 0; i < s_ndbg; i++)
+            if (s_dbg[i].frame == frame) debug_run(s_dbg[i].cmd);
+        if (s_game->before_frame) s_game->before_frame();
         io_set_inputs(&in);
         run_frame();
         platform_audio(samples, audio_take_samples(samples, 4096));

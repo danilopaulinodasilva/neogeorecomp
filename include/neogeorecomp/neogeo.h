@@ -55,6 +55,18 @@ typedef struct {
 
 #define NG_MAX_PARTS 8
 
+/* One line of the pause menu's Debug page. `token` is also the word an
+ * input script uses (`<frame> token`, or `<frame> token=N`). When max <
+ * min, confirming the line runs set(0). Otherwise left and right move
+ * the value between min and max. A line from 0 to 1 is a toggle. */
+typedef struct {
+    const char *label;
+    const char *token;
+    int min, max;
+    int (*get)(void);     /* current value; NULL if the line has none */
+    void (*set)(int value);
+} ng_debug_item_t;
+
 typedef struct {
     const char   *name;               /* short name, e.g. "mslug" */
     const char   *title;              /* window title */
@@ -82,6 +94,14 @@ typedef struct {
      * can fill the margins of screens drawn for 320 pixels from its own
      * graphics. Copies change only the picture, never VRAM. */
     int (*extend)(const uint16_t *vram, int screen_w, ng_extra_sprite_t *out, int max);
+    /* Optional lines for the pause menu's Debug page, ending with a zero
+     * token. NULL if the game has none. Save and load are always on that
+     * page: one slot for the whole machine, refused when the output width
+     * differs, because a game's widescreen patches are applied at load. */
+    const ng_debug_item_t *debug;
+    /* Optional, called once per frame before the CPU runs, so a debug line
+     * can keep writing something the game would otherwise replace. */
+    void (*before_frame)(void);
 } ng_game_t;
 
 /* Controller state for one frame. Bits are active-high here; io.c inverts. */

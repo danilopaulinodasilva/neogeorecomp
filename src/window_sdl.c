@@ -245,7 +245,7 @@ static void present(const uint32_t *fb) {
 
 /* ---- the pause menu ---- */
 
-enum { M_RESUME, M_VOLUME, M_FULLSCREEN, M_SCANLINES, M_SCREEN, M_KEYS1, M_KEYS2, M_RESET, M_QUIT, M_COUNT };
+enum { M_RESUME, M_VOLUME, M_FULLSCREEN, M_SCANLINES, M_SCREEN, M_KEYS1, M_KEYS2, M_DEBUG, M_RESET, M_QUIT, M_COUNT };
 enum { EV_NONE, EV_UP, EV_DOWN, EV_LEFT, EV_RIGHT, EV_OK, EV_BACK };
 
 static uint32_t s_menu_fb[NG_MAX_SCREEN_W * NG_SCREEN_H];
@@ -354,6 +354,44 @@ static int keys_menu(const uint32_t *game, int player) {
     }
 }
 
+/* The game's own lines (ng_debug_item_t) plus the machine's one slot.
+ * Returns 0 when the window was closed. */
+static int debug_menu(const uint32_t *game) {
+    int sel = 0;
+    for (;;) {
+        int n = ng_debug_count();
+        char lines[24][40];
+        const char *st;
+        if (n > 22) n = 22;
+        for (int i = 0; i < n; i++) ng_debug_label(i, lines[i], 40);
+        snprintf(lines[n], 40, "Back");
+        st = ng_debug_status();
+        draw_menu(game, "DEBUG", lines, n + 1, sel, st && st[0] ? st : "Esc back");
+        SDL_Event e;
+        if (!SDL_WaitEventTimeout(&e, 100)) continue;
+        if (e.type == SDL_QUIT) return 0;
+        if (e.type == SDL_CONTROLLERDEVICEADDED) pad_added(e.cdevice.which);
+        if (e.type == SDL_CONTROLLERDEVICEREMOVED) pad_removed(e.cdevice.which);
+        int ev = menu_event(&e);
+        switch (ev) {
+        case EV_UP: sel = (sel + n) % (n + 1); break;
+        case EV_DOWN: sel = (sel + 1) % (n + 1); break;
+        case EV_BACK: return 1;
+        case EV_LEFT: case EV_RIGHT: case EV_OK:
+            if (sel == n) { if (ev == EV_OK) return 1; break; }
+            if (ng_debug_adjustable(sel)) {
+                if (ev == EV_LEFT) ng_debug_action(sel, -1);
+                else if (ev == EV_RIGHT) ng_debug_action(sel, 1);
+                else ng_debug_action(sel, 0);
+            } else if (ev == EV_OK) {
+                ng_debug_action(sel, 0);
+            }
+            break;
+        default: break;
+        }
+    }
+}
+
 /* Runs the menu over the paused game; returns 0 to quit. */
 static int menu(const uint32_t *game) {
     int sel = 0, width_at_start = ng_screen_w;
@@ -369,6 +407,7 @@ static int menu(const uint32_t *game) {
                  next_width != width_at_start ? " *" : "");
         snprintf(lines[M_KEYS1], 40, "Player 1 keys");
         snprintf(lines[M_KEYS2], 40, "Player 2 keys");
+        snprintf(lines[M_DEBUG], 40, "Debug");
         snprintf(lines[M_RESET], 40, "Reset");
         snprintf(lines[M_QUIT], 40, "Quit");
         draw_menu(game, "PAUSED", lines, M_COUNT, sel,
@@ -397,6 +436,9 @@ static int menu(const uint32_t *game) {
             case M_SCREEN: s_set.width = next_width > NG_SCREEN_W ? NG_SCREEN_W : 400; break;
             case M_KEYS1: case M_KEYS2:
                 if (ev == EV_OK && !keys_menu(game, sel == M_KEYS1 ? 0 : 1)) { settings_save(); return 0; }
+                break;
+            case M_DEBUG:
+                if (ev == EV_OK && !debug_menu(game)) { settings_save(); return 0; }
                 break;
             case M_RESET: if (ev == EV_OK) { s_reset = 1; goto done; } break;
             case M_QUIT: if (ev == EV_OK) { settings_save(); return 0; } break;

@@ -20,6 +20,7 @@
 #include "ng_internal.h"
 #include <neogeorecomp/cpu.h>
 #include <string.h>
+#include <stdio.h>
 
 uint16_t lspc_vram[0x10000];
 uint8_t  lspc_anim_counter;
@@ -46,6 +47,31 @@ void lspc_reset(void) {
     s_addr = 0; s_mod = 1;
     s_anim_speed = 0; s_anim_frames = 0; s_anim_disabled = 0; lspc_anim_counter = 0;
     s_timer_ctrl = 0; s_timer_reload = 0; s_timer_deadline = INT64_MAX;
+}
+
+int lspc_state_save(FILE *f) {
+    uint8_t regs[8];
+    regs[0] = s_anim_speed; regs[1] = s_anim_frames; regs[2] = s_anim_disabled;
+    regs[3] = lspc_anim_counter; regs[4] = s_timer_ctrl; regs[5] = regs[6] = regs[7] = 0;
+    if (fwrite(lspc_vram, sizeof(lspc_vram), 1, f) != 1) return -1;
+    if (fwrite(&s_addr, 2, 1, f) != 1) return -1;
+    if (fwrite(&s_mod, 2, 1, f) != 1) return -1;
+    if (fwrite(regs, 1, 8, f) != 8) return -1;
+    if (fwrite(&s_timer_reload, 4, 1, f) != 1) return -1;
+    return fwrite(&s_timer_deadline, 8, 1, f) == 1 ? 0 : -1;
+}
+
+int lspc_state_load(FILE *f) {
+    uint8_t regs[8];
+    if (fread(lspc_vram, sizeof(lspc_vram), 1, f) != 1) return -1;
+    if (fread(&s_addr, 2, 1, f) != 1) return -1;
+    if (fread(&s_mod, 2, 1, f) != 1) return -1;
+    if (fread(regs, 1, 8, f) != 8) return -1;
+    if (fread(&s_timer_reload, 4, 1, f) != 1) return -1;
+    if (fread(&s_timer_deadline, 8, 1, f) != 1) return -1;
+    s_anim_speed = regs[0]; s_anim_frames = regs[1]; s_anim_disabled = regs[2];
+    lspc_anim_counter = regs[3]; s_timer_ctrl = regs[4];
+    return 0;
 }
 
 static void timer_load(int64_t from) {

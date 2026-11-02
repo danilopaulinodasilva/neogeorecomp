@@ -47,7 +47,7 @@ Frame numbers count 59.19 Hz video frames from power-on. The MVS BIOS eyecatcher
 
 Keys: player 1 arrows and **Z X C V** = A B C D, **1** = start, **3** = select; player 2 **R F D G** and **A S Q W** = A B C D, **2** = start, **4** = select (MAME's layout); **5** / **6** = coin 1 / 2; **9** = service; **F2** = test switch; **Esc** = menu.
 
-**Esc** (or a gamepad's Guide button) pauses and opens the menu: volume, fullscreen, scanlines, 4:3 or 16:9 for the next start, each player's keys, reset and quit. The settings are saved in SDL's per-user folder for the game (on macOS, `~/Library/Application Support/neogeorecomp/<game>/settings.ini`); options on the command line win over them, and headless runs never read them.
+**Esc** (or a gamepad's Guide button) pauses and opens the menu: volume, fullscreen, scanlines, 4:3 or 16:9 for the next start, each player's keys, a Debug page, reset and quit. Debug lists whatever lines the game supplied (`ng_game_t.debug`), then Save slot and Load slot: one snapshot of the machine, in `<game>.slot` in the current directory. A slot only loads when the output width matches, because a game's patches are applied when the ROM is loaded. The settings are saved in SDL's per-user folder for the game (on macOS, `~/Library/Application Support/neogeorecomp/<game>/settings.ini`); options on the command line win over them, and headless runs never read them.
 
 Gamepads work too, plugged in before or while playing: the first is player 1, the second player 2. The D-pad or left stick moves, the face buttons South, East, West and North (A, B, X, Y on an Xbox pad) are A, B, C and D, Start is start and Back is select. `--mute` turns the sound off; `--wav FILE` writes it to a file, also headless.
 
@@ -81,6 +81,8 @@ One event per line: `<frame>[-<end>] <button>[+<button>...]`. A single frame hol
 ```
 
 Buttons: `up down left right a b c d` for player 1; `p2up p2down p2left p2right p2a p2b p2c p2d`; `start start2 select coin coin2 service test`.
+
+A word that is not a button is a debug command, and it runs once on that frame (a range still runs once, at its first frame). `save` and `load` are the slot. A game's own words come from `ng_game_t.debug`: `ko` runs a button line, `stage=3` sets a value line. KOF98's words are `ko`, `stage=0`..`stage=8` and `rugal` (`rugal=0` turns it off).
 
 With the same script, a run is deterministic, down to identical frames on Windows and Linux.
 

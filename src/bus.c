@@ -16,6 +16,7 @@
 #include "ng_internal.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 uint8_t *ng_rmap[256];
 uint8_t *ng_wmap[256];
@@ -67,6 +68,30 @@ int bus_bank_count(void) {
 int bus_bank(void) {
     size_t banked = banked_size();
     return banked > 0x100000 ? (int)((s_bank % banked) >> 20) : 0;
+}
+
+/* The slot holds the RAM the CPU can change and the latches that pick a
+ * ROM window. Page tables are rebuilt from those latches, not stored. */
+int bus_state_save(FILE *f) {
+    int32_t misc[3];
+    misc[0] = bus_bank();
+    misc[1] = s_bios_vectors;
+    misc[2] = s_backup_locked;
+    if (fwrite(s_wram, 1, sizeof(s_wram), f) != sizeof(s_wram)) return -1;
+    if (fwrite(s_backup, 1, sizeof(s_backup), f) != sizeof(s_backup)) return -1;
+    return fwrite(misc, sizeof(misc), 1, f) == 1 ? 0 : -1;
+}
+
+int bus_state_load(FILE *f) {
+    int32_t misc[3];
+    if (fread(s_wram, 1, sizeof(s_wram), f) != sizeof(s_wram)) return -1;
+    if (fread(s_backup, 1, sizeof(s_backup), f) != sizeof(s_backup)) return -1;
+    if (fread(misc, sizeof(misc), 1, f) != 1) return -1;
+    s_bank = (uint32_t)misc[0] << 20;
+    map_bank();
+    bus_select_bios_vectors(misc[1]);
+    bus_set_backup_lock(misc[2]);
+    return 0;
 }
 
 void bus_select_bios_vectors(int bios) {

@@ -76,6 +76,26 @@ void pal_write(uint32_t addr, uint16_t v) {
 
 void pal_select_bank(int bank) { s_pal_bank = bank & 1; }
 
+int pal_state_save(FILE *f) {
+    int32_t misc[2];
+    misc[0] = s_pal_bank;
+    misc[1] = s_fix_use_bios;
+    if (fwrite(s_palram, sizeof(s_palram), 1, f) != 1) return -1;
+    return fwrite(misc, sizeof(misc), 1, f) == 1 ? 0 : -1;
+}
+
+int pal_state_load(FILE *f) {
+    int32_t misc[2];
+    if (fread(s_palram, sizeof(s_palram), 1, f) != 1) return -1;
+    if (fread(misc, sizeof(misc), 1, f) != 1) return -1;
+    for (int bank = 0; bank < 2; bank++)
+        for (int i = 0; i < 0x1000; i++)
+            s_pens[bank][i] = color_to_argb(s_palram[bank][i]);
+    s_pal_bank = misc[0] & 1;
+    s_fix_use_bios = misc[1];
+    return 0;
+}
+
 /* ---- loading ---- */
 
 static void decode_sprites(const uint8_t *crom, size_t size) {
