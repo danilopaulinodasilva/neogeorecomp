@@ -82,7 +82,7 @@ One event per line: `<frame>[-<end>] <button>[+<button>...]`. A single frame hol
 
 Buttons: `up down left right a b c d` for player 1; `p2up p2down p2left p2right p2a p2b p2c p2d`; `start start2 select coin coin2 service test`.
 
-A word that is not a button is a debug command, and it runs once on that frame (a range still runs once, at its first frame). `save` and `load` are the slot. A game's own words come from `ng_game_t.debug`: `ko` runs a button line, `stage=3` sets a value line. KOF98's words are `ko`, `stage=0`..`stage=8` and `rugal` (`rugal=0` turns it off).
+A word that is not a button is a debug command, and it runs once on that frame (a range still runs once, at its first frame). `save` and `load` are the slot. A game's own words come from `ng_game_t.debug`: `ko` runs a button line, `stage=3` sets a value line. KOF98's words are `ko`, `stage=0`..`stage=8`, `match=0`..`match=7` (`match=0` leaves the ladder, `match=7` is the boss) and `rugal` (`rugal=0` turns it off).
 
 With the same script, a run is deterministic, down to identical frames on Windows and Linux.
 
